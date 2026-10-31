@@ -39,6 +39,6 @@
         }
     ],
     "url": "https://git.geeks.gay/cosmo/dh-pdf-importer",
-    "manifest": "https://git.geeks.gay/cosmo/dh-pdf-importer/releases/latest/download/module.json",
+    "manifest": "https://git.geeks.gay/cosmo/dh-pdf-importer/raw/branch/main/module.json",
     "download": "https://git.geeks.gay/cosmo/dh-pdf-importer/releases/download/v0.1.0/dh-pdf-importer.zip"
 }
