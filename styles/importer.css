@@ -489,6 +489,17 @@
     margin-left: 0.25rem;
 }
 
+.dh-pdf-importer .dhpi-journal-mode {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dh-pdf-importer .dhpi-card.mode-pdf .dhpi-text-pages {
+    display: none;
+}
+
 /* ---------- Footer ---------- */
 
 .dh-pdf-importer .dhpi-footer {

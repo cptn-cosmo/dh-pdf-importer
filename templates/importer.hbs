@@ -95,7 +95,7 @@
             </h3>
             <div class="dhpi-grid">
                 {{#each entries}}
-                <article class="dhpi-card kind-{{kind}} {{#unless selected}}deselected{{/unless}}" data-search="{{searchText}}">
+                <article class="dhpi-card kind-{{kind}} {{#if (eq mode "pdf")}}mode-pdf{{/if}} {{#unless selected}}deselected{{/unless}}" data-search="{{searchText}}">
                     <header class="dhpi-card-header">
                         <input type="checkbox" data-select="{{id}}" {{#if selected}}checked{{/if}} aria-label="{{localize "DHPI.SelectEntry"}}">
                         <div class="dhpi-card-title">
@@ -161,8 +161,17 @@
                     </details>
                     {{/if}}
 
-                    {{#if pages}}
-                    <details class="dhpi-features" open>
+                    {{#if journalModes.length}}
+                    <label class="dhpi-field dhpi-journal-mode">
+                        <span>{{localize "DHPI.JournalMode.label"}}</span>
+                        <select data-journal-mode="{{id}}">
+                            {{#each journalModes}}<option value="{{value}}" {{#if (eq value ../mode)}}selected{{/if}}>{{label}}</option>{{/each}}
+                        </select>
+                    </label>
+                    {{/if}}
+
+                    {{#if pages.length}}
+                    <details class="dhpi-features dhpi-text-pages" open>
                         <summary>{{subtitle}}</summary>
                         <ol class="dhpi-pages">{{#each pages}}<li>{{name}}{{#if page}} <span class="dhpi-page">p. {{page}}</span>{{/if}}</li>{{/each}}</ol>
                     </details>

@@ -3,7 +3,7 @@
  */
 import { buildDocument } from './builders.mjs';
 import { collectCandidates, linkText, matchGroup, normalize, resolveUuid } from './linker.mjs';
-import { MODULE_ID, registerAttributionSource } from './settings.mjs';
+import { MODULE_ID, getPdfFolder, registerAttributionSource } from './settings.mjs';
 
 const DOCUMENT_FOR_KIND = {
     adversary: 'Actor',
@@ -125,10 +125,11 @@ function environmentLinks(entry, index, created) {
  * @param {{source: string, artist: string, pageOffset: number}} options.attribution
  * @param {Record<string, string>} options.destinations   Entry kind -> "world" or a compendium collection id
  * @param {{mode: string, separateKinds: boolean}} options.folders  Folder organisation
+ * @param {string} [options.pdfSrc]          Path of the PDF, for a journal that embeds it
  * @param {(done: number, total: number) => void} [options.onProgress]
  * @returns {Promise<{created: ClientDocument[], failed: {entry: object, error: Error}[]}>}
  */
-export async function importEntries(entries, { attribution, destinations, folders: folderOptions, onProgress }) {
+export async function importEntries(entries, { attribution, destinations, folders: folderOptions, pdfSrc, onProgress }) {
     const sorted = entries.toSorted((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
     const created = [];
     const createdById = new Map();
@@ -142,6 +143,7 @@ export async function importEntries(entries, { attribution, destinations, folder
             const links = entry.kind === 'environment' ? environmentLinks(entry, index, createdById) : {};
             const { documentName, data } = buildDocument(entry, {
                 attribution,
+                pdfSrc,
                 ...links,
                 resolveLink: id => {
                     const doc = createdById.get(id);
@@ -166,4 +168,27 @@ export async function importEntries(entries, { attribution, destinations, folder
 
     if (created.length && attribution.source?.trim()) await registerAttributionSource(attribution.source.trim());
     return { created, failed };
+}
+
+/**
+ * Upload a PDF chosen from the user's computer into the folder set in the module settings so a journal page can show it.
+ * @param {File} file
+ * @returns {Promise<string>} Path of the uploaded file
+ */
+export async function uploadPdf(file) {
+    const FilePicker = foundry.applications.apps.FilePicker.implementation;
+    const directory = getPdfFolder();
+    // Create every missing level, since the server only creates one directory at a time.
+    const parts = directory.split('/');
+    for (const depth of parts.keys()) {
+        const path = parts.slice(0, depth + 1).join('/');
+        try {
+            await FilePicker.browse('data', path);
+        } catch {
+            await FilePicker.createDirectory('data', path);
+        }
+    }
+    const response = await FilePicker.upload('data', directory, file, {}, { notify: false });
+    if (!response?.path) throw new Error(game.i18n.localize('DHPI.Error.upload'));
+    return response.path;
 }

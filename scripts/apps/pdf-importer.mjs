@@ -1,13 +1,16 @@
 import { extractPdf, loadFoundryPdfjs } from '../pdf/extract.mjs';
 import { parseDocument } from '../parsers/index.mjs';
 import { attributionFor } from '../builders.mjs';
-import { FOLDER_MODES, documentNameFor, importEntries } from '../importer.mjs';
+import { FOLDER_MODES, documentNameFor, importEntries, uploadPdf } from '../importer.mjs';
 import { SYSTEM_PACK, collectCandidates, linkText, matchGroup, normalize } from '../linker.mjs';
 import { MODULE_ID, allAttributionSources, getImportOptions, setImportOptions } from '../settings.mjs';
 
 const { HandlebarsApplicationMixin, ApplicationV2 } = foundry.applications.api;
 
 const KINDS = ['adversary', 'environment', 'weapon', 'armor', 'journal'];
+
+/** How the journal is imported: extracted text pages, the PDF itself, or both. */
+const JOURNAL_MODES = ['text', 'pdf', 'both'];
 
 const signed = value => (value == null ? '' : value >= 0 ? `+${value}` : `${value}`);
 
@@ -26,6 +29,9 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
 
     fileName = '';
 
+    /** The PDF as picked: a local file that must be uploaded, or a path already on the server. */
+    pdf = { file: null, path: null };
+
     /** @type {{source: string, artist: string, pageOffset: number}} */
     attribution = { source: '', artist: '', pageOffset: 0 };
 
@@ -34,12 +40,15 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
 
     folders = { mode: 'source', separateKinds: true };
 
+    journalMode = 'text';
+
     constructor(options) {
         super(options);
         const saved = getImportOptions();
         Object.assign(this.destinations, saved.destinations);
         Object.assign(this.folders, saved.folders);
         if (!FOLDER_MODES.includes(this.folders.mode)) this.folders.mode = 'source';
+        if (JOURNAL_MODES.includes(saved.journalMode)) this.journalMode = saved.journalMode;
     }
 
     filter = 'all';
@@ -216,7 +225,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         else if (this.result.emptyPages.length) {
             warnings.push(game.i18n.format('DHPI.Warning.emptyPages', { pages: this.result.emptyPages.join(', ') }));
         }
-        if (!this.result.entries.length && !this.result.warnings.includes('noText')) {
+        if (!this.result.entries.some(e => !e.pdfOnly) && !this.result.warnings.includes('noText')) {
             warnings.push(game.i18n.localize('DHPI.Warning.nothingFound'));
         }
         return warnings;
@@ -311,7 +320,13 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             case 'journal':
                 return {
                     ...base,
-                    subtitle: game.i18n.format('DHPI.JournalPages', { count: entry.pages.length }),
+                    subtitle: entry.pdfOnly
+                        ? game.i18n.localize('DHPI.JournalPdfOnly')
+                        : game.i18n.format('DHPI.JournalPages', { count: entry.pages.length }),
+                    mode: entry.mode,
+                    journalModes: entry.pdfOnly
+                        ? []
+                        : JOURNAL_MODES.map(value => ({ value, label: game.i18n.localize(`DHPI.JournalMode.${value}`) })),
                     pages: entry.pages.map(p => ({ name: p.name, page: attributionFor(this.attribution, p.page).page }))
                 };
         }
@@ -367,6 +382,13 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
                 entry.secondary = event.target.checked;
                 const subtitle = event.target.closest('.dhpi-card').querySelector('.dhpi-subtitle');
                 subtitle.textContent = `${game.i18n.format('DHPI.TierLabel', { tier: entry.tier })} ${game.i18n.localize(entry.secondary ? 'DHPI.SecondaryWeapon' : 'DHPI.PrimaryWeapon')}`;
+            });
+        }
+        for (const select of html.querySelectorAll('select[data-journal-mode]')) {
+            select.addEventListener('change', event => {
+                const entry = this.#entry(event.target.dataset.journalMode);
+                entry.mode = this.journalMode = event.target.value;
+                event.target.closest('.dhpi-card').classList.toggle('mode-pdf', entry.mode === 'pdf');
             });
         }
         for (const input of html.querySelectorAll('[data-attribution]')) {
@@ -436,11 +458,17 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
 
     /** @param {File} file */
     async #loadFile(file) {
-        await this.#load(file.name, await file.arrayBuffer());
+        await this.#load(file.name, await file.arrayBuffer(), { file, path: null });
     }
 
-    async #load(fileName, buffer) {
+    /**
+     * @param {string} fileName
+     * @param {ArrayBuffer} buffer
+     * @param {{file: File|null, path: string|null}} pdf  Where the PDF can be found for a journal that embeds it
+     */
+    async #load(fileName, buffer, pdf) {
         this.fileName = fileName;
+        this.pdf = pdf;
         this.stage = 'loading';
         this.progress = { label: game.i18n.localize('DHPI.Progress.reading'), value: 0, total: 1 };
         await this.render();
@@ -450,6 +478,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
                 onProgress: (value, total) => this.#setProgress(game.i18n.format('DHPI.Progress.page', { value, total }), value, total)
             });
             this.result = parseDocument(extracted, { fileName });
+            this.#prepareJournal();
             this.#setProgress(game.i18n.localize('DHPI.Progress.matching'), 1, 1);
             this.linkIndex = this.result.entries.some(e => e.kind === 'environment')
                 ? await collectCandidates(this.result.entries)
@@ -465,6 +494,18 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             this.stage = 'select';
         }
         await this.render();
+    }
+
+    /** Set the journal's import mode, adding a PDF-only journal when the PDF had no usable text. */
+    #prepareJournal() {
+        const pdfName = this.fileName.replace(/\.pdf$/i, '');
+        let journal = this.result.entries.find(e => e.kind === 'journal');
+        if (!journal) {
+            journal = { kind: 'journal', id: 'journal', name: this.result.attribution.source || pdfName, page: 1, pages: [], warnings: [], pdfOnly: true };
+            this.result.entries.push(journal);
+        }
+        journal.pdfName = pdfName;
+        journal.mode = journal.pdfOnly ? 'pdf' : this.journalMode;
     }
 
     #setProgress(label, value, total) {
@@ -492,7 +533,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
                 const url = /^https?:/i.test(path) ? path : foundry.utils.getRoute(path);
                 const response = await fetch(url);
                 if (!response.ok) return ui.notifications.error(game.i18n.format('DHPI.Error.read', { message: response.statusText }));
-                await this.#load(decodeURIComponent(path.split('/').at(-1)), await response.arrayBuffer());
+                await this.#load(decodeURIComponent(path.split('/').at(-1)), await response.arrayBuffer(), { file: null, path });
             }
         });
         picker.browse();
@@ -528,7 +569,18 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
     static async #onImport() {
         const selected = this.result.entries.filter(e => e.selected);
         if (!selected.length) return;
-        await setImportOptions({ destinations: this.destinations, folders: this.folders });
+        await setImportOptions({ destinations: this.destinations, folders: this.folders, journalMode: this.journalMode });
+
+        // A journal that embeds the PDF needs it on the server; files from the user's computer are uploaded first.
+        let pdfSrc = this.pdf.path;
+        if (!pdfSrc && selected.some(e => e.kind === 'journal' && e.mode !== 'text')) {
+            try {
+                pdfSrc = await uploadPdf(this.pdf.file);
+            } catch (error) {
+                console.error(`${MODULE_ID} |`, error);
+                return ui.notifications.error(game.i18n.format('DHPI.Error.uploadFailed', { message: error.message }));
+            }
+        }
         this.stage = 'importing';
         this.progress = { label: game.i18n.localize('DHPI.Progress.importing'), value: 0, total: selected.length };
         await this.render();
@@ -537,6 +589,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             attribution: this.attribution,
             destinations: this.destinations,
             folders: this.folders,
+            pdfSrc,
             onProgress: (value, total) => this.#setProgress(game.i18n.format('DHPI.Progress.importItem', { value, total }), value, total)
         });
 

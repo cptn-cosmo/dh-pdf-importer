@@ -10,7 +10,7 @@
             "hint": "Drop a PDF here, choose one from your computer, or pick one from the Foundry data folder.",
             "local": "Choose PDF…",
             "server": "Browse Foundry files…",
-            "supported": "Recognises adversary and environment stat blocks, weapon and armor tables, and the running text (as a journal). Scanned or image-only PDFs contain no text and cannot be imported."
+            "supported": "Recognises adversary and environment stat blocks, weapon and armor tables, and the running text (as a journal). The PDF itself can also be added to the journal. Scanned or image-only PDFs contain no text, so only the PDF itself can be imported."
         },
         "Progress": {
             "reading": "Opening PDF…",
@@ -21,13 +21,15 @@
         },
         "Found": "{count} entries found",
         "Warning": {
-            "noText": "This PDF contains no extractable text. It is probably scanned or made of images, so nothing can be imported.",
+            "noText": "This PDF contains no extractable text. It is probably scanned or made of images, so it can only be imported as a PDF journal.",
             "emptyPages": "Pages without text (images only) were skipped: {pages}",
             "nothingFound": "No importable content was recognised in this PDF.",
             "notPdf": "Please choose a PDF file."
         },
         "Error": {
-            "read": "Could not read the PDF: {message}"
+            "read": "Could not read the PDF: {message}",
+            "upload": "The server did not return a path for the uploaded file.",
+            "uploadFailed": "Could not upload the PDF for the journal: {message}"
         },
         "Attribution": {
             "title": "Attribution",
@@ -90,6 +92,13 @@
         "PrimaryWeapon": "Primary Weapon",
         "SecondaryWeapon": "Secondary Weapon",
         "JournalPages": "Journal with {count} pages",
+        "JournalPdfOnly": "The PDF as a journal page",
+        "JournalMode": {
+            "label": "Import as",
+            "text": "Text pages",
+            "pdf": "PDF",
+            "both": "Text pages and PDF"
+        },
         "DamageType": {
             "physical": "phy",
             "magical": "mag",
@@ -125,6 +134,12 @@
             "world": "World",
             "system": "Daggerheart compendium",
             "unmatched": "No adversary with this name was found; it stays as text"
+        },
+        "Settings": {
+            "pdfFolder": {
+                "name": "PDF upload folder",
+                "hint": "Folder in the Foundry data directory where PDFs chosen from your computer are uploaded when a journal includes the PDF. PDFs picked from the Foundry files are used where they are."
+            }
         }
     }
 }

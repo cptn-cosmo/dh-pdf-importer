@@ -5,6 +5,8 @@ export const MODULE_ID = 'dh-pdf-importer';
 
 const SOURCES_SETTING = 'attributionSources';
 const OPTIONS_SETTING = 'importOptions';
+const PDF_FOLDER_SETTING = 'pdfFolder';
+const DEFAULT_PDF_FOLDER = 'assets/dh-pdf-importer';
 
 export function registerSettings() {
     game.settings.register(MODULE_ID, SOURCES_SETTING, {
@@ -20,6 +22,24 @@ export function registerSettings() {
         type: Object,
         default: {}
     });
+    game.settings.register(MODULE_ID, PDF_FOLDER_SETTING, {
+        name: 'DHPI.Settings.pdfFolder.name',
+        hint: 'DHPI.Settings.pdfFolder.hint',
+        scope: 'world',
+        config: true,
+        type: String,
+        filePicker: 'folder',
+        default: DEFAULT_PDF_FOLDER
+    });
+}
+
+/**
+ * Folder in the Foundry data directory that PDFs from the user's computer are uploaded to.
+ * @returns {string}
+ */
+export function getPdfFolder() {
+    const folder = game.settings.get(MODULE_ID, PDF_FOLDER_SETTING)?.trim().replace(/^\/+|\/+$/g, '');
+    return folder || DEFAULT_PDF_FOLDER;
 }
 
 /**

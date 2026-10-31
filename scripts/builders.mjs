@@ -225,8 +225,10 @@ function buildArmor(entry, attribution) {
     };
 }
 
-function buildJournal(entry, attribution, resolveLink) {
-    const pages = entry.pages.map((page, index) => ({
+function buildJournal(entry, attribution, resolveLink, pdfSrc) {
+    const mode = entry.mode ?? 'text';
+    const textPages = mode === 'pdf' ? [] : entry.pages;
+    const pages = textPages.map((page, index) => ({
         name: page.name,
         type: 'text',
         sort: (index + 1) * 100000,
@@ -238,6 +240,11 @@ function buildJournal(entry, attribution, resolveLink) {
             })
         }
     }));
+    // The original PDF goes after the text pages so the linked text stays the first thing shown.
+    if (mode !== 'text') {
+        if (!pdfSrc) throw new Error('No PDF file to attach to the journal');
+        pages.push({ name: entry.pdfName ?? entry.name, type: 'pdf', sort: (pages.length + 1) * 100000, src: pdfSrc });
+    }
     return {
         documentName: 'JournalEntry',
         data: {
@@ -256,9 +263,10 @@ function buildJournal(entry, attribution, resolveLink) {
  * @param {(group: object) => string[]} [context.resolveAdversaries]  Potential adversary UUIDs
  * @param {(id: string) => string|null} [context.resolveLink]           Content link for an entry id
  * @param {(html: string) => string} [context.linkFeature]             Adds adversary links to feature text
+ * @param {string} [context.pdfSrc]                                     Path of the PDF for a journal in "pdf" or "both" mode
  * @returns {{documentName: string, data: object}}
  */
-export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature }) {
+export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature, pdfSrc }) {
     const attr = attributionFor(attribution, entry.page);
     switch (entry.kind) {
         case 'adversary':
@@ -270,7 +278,7 @@ export function buildDocument(entry, { attribution, resolveAdversaries, resolveL
         case 'armor':
             return buildArmor(entry, attr);
         case 'journal':
-            return buildJournal(entry, attr, resolveLink);
+            return buildJournal(entry, attr, resolveLink, pdfSrc);
     }
     throw new Error(`Unknown entry kind ${entry.kind}`);
 }

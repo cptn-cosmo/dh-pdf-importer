@@ -2,7 +2,7 @@
     "id": "dh-pdf-importer",
     "title": "Daggerheart PDF Importer",
     "description": "Import adversaries, environments, weapons, armor and journal text from Daggerheart PDF supplements into Foundry VTT, with a preview of every recognised entry before importing.",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "authors": [
         {
             "name": "cosmo",
@@ -40,5 +40,5 @@
     ],
     "url": "https://git.geeks.gay/cosmo/dh-pdf-importer",
     "manifest": "https://git.geeks.gay/cosmo/dh-pdf-importer/raw/branch/main/module.json",
-    "download": "https://git.geeks.gay/cosmo/dh-pdf-importer/releases/download/v0.1.0/dh-pdf-importer.zip"
+    "download": "https://git.geeks.gay/cosmo/dh-pdf-importer/releases/download/v0.1.1/dh-pdf-importer.zip"
 }
