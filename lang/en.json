@@ -1,0 +1,130 @@
+{
+    "DHPI": {
+        "Title": "PDF Importer",
+        "Open": "Import PDF",
+        "MenuHint": "Import adversaries, environments, weapons, armor and journal text from a Daggerheart PDF.",
+        "DefaultFolder": "Imported PDF",
+        "AttributionGroup": "Imported PDFs",
+        "Select": {
+            "title": "Import content from a PDF",
+            "hint": "Drop a PDF here, choose one from your computer, or pick one from the Foundry data folder.",
+            "local": "Choose PDF…",
+            "server": "Browse Foundry files…",
+            "supported": "Recognises adversary and environment stat blocks, weapon and armor tables, and the running text (as a journal). Scanned or image-only PDFs contain no text and cannot be imported."
+        },
+        "Progress": {
+            "reading": "Opening PDF…",
+            "page": "Reading page {value} of {total}",
+            "importing": "Importing…",
+            "importItem": "Importing {value} of {total}",
+            "matching": "Matching adversary names…"
+        },
+        "Found": "{count} entries found",
+        "Warning": {
+            "noText": "This PDF contains no extractable text. It is probably scanned or made of images, so nothing can be imported.",
+            "emptyPages": "Pages without text (images only) were skipped: {pages}",
+            "nothingFound": "No importable content was recognised in this PDF.",
+            "notPdf": "Please choose a PDF file."
+        },
+        "Error": {
+            "read": "Could not read the PDF: {message}"
+        },
+        "Attribution": {
+            "title": "Attribution",
+            "source": "Source",
+            "sourcePlaceholder": "Book or supplement title",
+            "artist": "Artist",
+            "pageOffset": "Page offset",
+            "pageOffsetHint": "Added to the PDF page number to get the printed page number used in attributions."
+        },
+        "Destination": {
+            "title": "Destination",
+            "world": "World"
+        },
+        "Filter": {
+            "all": "All"
+        },
+        "Kind": {
+            "adversary": {
+                "plural": "Adversaries"
+            },
+            "environment": {
+                "plural": "Environments"
+            },
+            "weapon": {
+                "plural": "Weapons"
+            },
+            "armor": {
+                "plural": "Armor"
+            },
+            "journal": {
+                "plural": "Journal"
+            }
+        },
+        "Search": "Filter by name…",
+        "SelectAll": "All",
+        "SelectNone": "None",
+        "SelectAllHint": "Select every entry currently shown",
+        "SelectNoneHint": "Deselect every entry currently shown",
+        "ToggleGroup": "Select or deselect this group",
+        "SelectEntry": "Import this entry",
+        "Name": "Name",
+        "PageHint": "Page used for the attribution",
+        "TierLabel": "Tier {tier}",
+        "Thresholds": "Thresholds",
+        "HP": "HP",
+        "Stress": "Stress",
+        "Special": "Special",
+        "Motives": "Motives & Tactics",
+        "Impulses": "Impulses",
+        "Attack": "ATK",
+        "Experience": "Experience",
+        "HordeDamage": "Horde damage",
+        "PotentialAdversaries": "Potential adversaries",
+        "Features": "Features ({count})",
+        "Trait": "Trait",
+        "Range": "Range",
+        "Damage": "Damage",
+        "Burden": "Burden",
+        "ArmorScore": "Armor Score",
+        "PrimaryWeapon": "Primary Weapon",
+        "SecondaryWeapon": "Secondary Weapon",
+        "JournalPages": "Journal with {count} pages",
+        "DamageType": {
+            "physical": "phy",
+            "magical": "mag",
+            "stress": "Stress"
+        },
+        "Resource": {
+            "stress": "Stress",
+            "fear": "Fear",
+            "hope": "Hope",
+            "hitPoints": "HP"
+        },
+        "Back": "Choose another PDF",
+        "ImportSelected": "Import {count} selected",
+        "Result": {
+            "success": "Imported {count} documents.",
+            "partial": "Imported {created} documents, {failed} failed: {names}. The failed entries are still selected so you can retry."
+        },
+        "Folders": {
+            "label": "Folders",
+            "mode": {
+                "none": "No folders",
+                "source": "One folder per source",
+                "tier": "Source › Tier",
+                "type": "Source › Type",
+                "tierType": "Source › Tier › Type"
+            },
+            "separateKinds": "Separate subfolder for each kind",
+            "noFolders": "Documents are created without folders"
+        },
+        "Links": {
+            "summary": "{matched} of {total} linked",
+            "thisPdf": "From this PDF",
+            "world": "World",
+            "system": "Daggerheart compendium",
+            "unmatched": "No adversary with this name was found; it stays as text"
+        }
+    }
+}

@@ -1,0 +1,184 @@
+<section class="dhpi-body stage-{{stage}}">
+    {{#if (eq stage "select")}}
+    <div class="dhpi-dropzone">
+        <i class="fa-solid fa-file-pdf dhpi-drop-icon" inert></i>
+        <h2>{{localize "DHPI.Select.title"}}</h2>
+        <p>{{localize "DHPI.Select.hint"}}</p>
+        <div class="dhpi-select-buttons">
+            <button type="button" data-action="chooseLocal"><i class="fa-solid fa-upload" inert></i> {{localize "DHPI.Select.local"}}</button>
+            <button type="button" data-action="browseServer"><i class="fa-solid fa-folder-open" inert></i> {{localize "DHPI.Select.server"}}</button>
+        </div>
+        <input type="file" accept="application/pdf,.pdf" hidden>
+        <p class="dhpi-supported">{{localize "DHPI.Select.supported"}}</p>
+    </div>
+
+    {{else if (or (eq stage "loading") (eq stage "importing"))}}
+    <div class="dhpi-progress">
+        <i class="fa-solid fa-spinner fa-spin" inert></i>
+        <div class="dhpi-progress-label">{{progress.label}}</div>
+        <div class="dhpi-progress-track"><div class="dhpi-progress-fill" style="width: {{progress.percent}}%"></div></div>
+    </div>
+
+    {{else}}
+    <header class="dhpi-header">
+        <div class="dhpi-file">
+            <i class="fa-solid fa-file-pdf" inert></i>
+            <span class="dhpi-file-name">{{fileName}}</span>
+            <span class="dhpi-file-count">{{localize "DHPI.Found" count=total}}</span>
+        </div>
+
+        {{#each warnings}}
+        <p class="dhpi-warning"><i class="fa-solid fa-triangle-exclamation" inert></i> {{this}}</p>
+        {{/each}}
+
+        <fieldset class="dhpi-attribution">
+            <legend><i class="fa-solid fa-signature" inert></i> {{localize "DHPI.Attribution.title"}}</legend>
+            <label class="dhpi-field wide">
+                <span>{{localize "DHPI.Attribution.source"}}</span>
+                <input type="text" data-attribution="source" value="{{attribution.source}}" list="dhpi-sources" placeholder="{{localize "DHPI.Attribution.sourcePlaceholder"}}">
+                <datalist id="dhpi-sources">{{#each sources}}<option value="{{this}}"></option>{{/each}}</datalist>
+            </label>
+            <label class="dhpi-field wide">
+                <span>{{localize "DHPI.Attribution.artist"}}</span>
+                <input type="text" data-attribution="artist" value="{{attribution.artist}}">
+            </label>
+            <label class="dhpi-field narrow" data-tooltip="{{localize "DHPI.Attribution.pageOffsetHint"}}">
+                <span>{{localize "DHPI.Attribution.pageOffset"}}</span>
+                <input type="number" data-attribution="pageOffset" value="{{attribution.pageOffset}}" step="1">
+            </label>
+        </fieldset>
+
+        <fieldset class="dhpi-destinations">
+            <legend><i class="fa-solid fa-box-archive" inert></i> {{localize "DHPI.Destination.title"}}</legend>
+            {{#each destinations}}
+            <label class="dhpi-field">
+                <span><i class="{{icon}}" inert></i> {{label}}</span>
+                <select data-destination="{{kind}}">
+                    {{#each options}}<option value="{{value}}" {{#if (eq value ../value)}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+            </label>
+            {{/each}}
+            <label class="dhpi-field">
+                <span><i class="fa-solid fa-folder-tree" inert></i> {{localize "DHPI.Folders.label"}}</span>
+                <select name="folderMode">
+                    {{#each folders.modes}}<option value="{{value}}" {{#if (eq value ../folders.mode)}}selected{{/if}}>{{label}}</option>{{/each}}
+                </select>
+            </label>
+            <label class="dhpi-toggle dhpi-separate {{#if (eq folders.mode "none")}}disabled{{/if}}">
+                <input type="checkbox" name="separateKinds" {{#if folders.separateKinds}}checked{{/if}} {{#if (eq folders.mode "none")}}disabled{{/if}}>
+                {{localize "DHPI.Folders.separateKinds"}}
+            </label>
+            <p class="dhpi-folder-example"><i class="fa-regular fa-folder-open" inert></i> {{folderExample}}</p>
+        </fieldset>
+
+        <nav class="dhpi-toolbar">
+            <div class="dhpi-filters">
+                {{#each filters}}
+                <button type="button" class="dhpi-chip {{#if active}}active{{/if}}" data-action="setFilter" data-filter="{{key}}">
+                    {{label}} <span class="dhpi-chip-count">{{count}}</span>
+                </button>
+                {{/each}}
+            </div>
+            <input type="search" name="search" value="{{search}}" placeholder="{{localize "DHPI.Search"}}">
+            <button type="button" class="dhpi-small" data-action="selectAll" data-tooltip="{{localize "DHPI.SelectAllHint"}}"><i class="fa-solid fa-square-check" inert></i> {{localize "DHPI.SelectAll"}}</button>
+            <button type="button" class="dhpi-small" data-action="selectNone" data-tooltip="{{localize "DHPI.SelectNoneHint"}}"><i class="fa-regular fa-square" inert></i> {{localize "DHPI.SelectNone"}}</button>
+        </nav>
+    </header>
+
+    <div class="dhpi-results">
+        {{#each groups}}
+        <section class="dhpi-group {{#if hidden}}hidden{{/if}}" data-kind="{{kind}}">
+            <h3 class="dhpi-group-title">
+                <input type="checkbox" data-action="toggleGroup" {{#if (eq selected count)}}checked{{/if}} data-tooltip="{{localize "DHPI.ToggleGroup"}}">
+                <i class="{{icon}}" inert></i> {{label}}
+                <span class="dhpi-group-count">{{selected}} / {{count}}</span>
+            </h3>
+            <div class="dhpi-grid">
+                {{#each entries}}
+                <article class="dhpi-card kind-{{kind}} {{#unless selected}}deselected{{/unless}}" data-search="{{searchText}}">
+                    <header class="dhpi-card-header">
+                        <input type="checkbox" data-select="{{id}}" {{#if selected}}checked{{/if}} aria-label="{{localize "DHPI.SelectEntry"}}">
+                        <div class="dhpi-card-title">
+                            <input type="text" class="dhpi-name" data-rename="{{id}}" value="{{name}}" aria-label="{{localize "DHPI.Name"}}">
+                            <div class="dhpi-subtitle">{{subtitle}}</div>
+                        </div>
+                        {{#if page}}<span class="dhpi-page" data-tooltip="{{localize "DHPI.PageHint"}}">p. {{page}}</span>{{/if}}
+                    </header>
+
+                    {{#if warnings.length}}
+                    <ul class="dhpi-card-warnings">{{#each warnings}}<li><i class="fa-solid fa-triangle-exclamation" inert></i> {{this}}</li>{{/each}}</ul>
+                    {{/if}}
+
+                    {{#if description}}<div class="dhpi-description">{{{description}}}</div>{{/if}}
+                    {{#if motives}}<p class="dhpi-line"><strong>{{localize "DHPI.Motives"}}:</strong> {{motives}}</p>{{/if}}
+                    {{#if impulses}}<p class="dhpi-line"><strong>{{localize "DHPI.Impulses"}}:</strong> {{impulses}}</p>{{/if}}
+
+                    {{#if stats}}
+                    <dl class="dhpi-stats">
+                        {{#each stats}}<div><dt>{{label}}</dt><dd>{{value}}</dd></div>{{/each}}
+                    </dl>
+                    {{/if}}
+
+                    {{#if attack}}<p class="dhpi-line"><strong>{{localize "DHPI.Attack"}}:</strong> {{attack}}</p>{{/if}}
+                    {{#if experiences}}<p class="dhpi-line"><strong>{{localize "DHPI.Experience"}}:</strong> {{experiences}}</p>{{/if}}
+                    {{#if hordeDamage}}<p class="dhpi-line"><strong>{{localize "DHPI.HordeDamage"}}:</strong> {{hordeDamage}}</p>{{/if}}
+                    {{#if adversaryGroups.length}}
+                    <div class="dhpi-adversaries">
+                        <strong>{{localize "DHPI.PotentialAdversaries"}}</strong>{{#if linkSummary}} <span class="dhpi-link-summary">{{linkSummary}}</span>{{/if}}
+                        <div class="dhpi-adversary-list">
+                            {{#each adversaryGroups}}
+                            <span class="dhpi-adversary-group">
+                                {{#if label}}<span class="dhpi-group-label">{{label}}:</span>{{/if}}
+                                {{#each names}}
+                                {{#if links.length}}
+                                {{#each links}}<span class="dhpi-chip-link linked" data-tooltip="{{origin}}"><i class="fa-solid fa-link" inert></i> {{name}}</span>{{/each}}
+                                {{else}}
+                                <span class="dhpi-chip-link {{#if generic}}generic{{else}}unlinked{{/if}}" {{#unless generic}}data-tooltip="{{localize "DHPI.Links.unmatched"}}"{{/unless}}>{{name}}</span>
+                                {{/if}}
+                                {{/each}}
+                            </span>
+                            {{/each}}
+                        </div>
+                    </div>
+                    {{/if}}
+
+                    {{#if (eq kind "weapon")}}
+                    <label class="dhpi-toggle"><input type="checkbox" data-secondary="{{id}}" {{#if secondary}}checked{{/if}}> {{localize "DHPI.SecondaryWeapon"}}</label>
+                    {{/if}}
+
+                    {{#if features.length}}
+                    <details class="dhpi-features">
+                        <summary>
+                            {{localize "DHPI.Features" count=features.length}}
+                            <span class="dhpi-feature-names">{{#each features}}<span class="dhpi-tag form-{{formKey}}">{{name}}</span>{{/each}}</span>
+                        </summary>
+                        {{#each features}}
+                        <div class="dhpi-feature">
+                            <div class="dhpi-feature-title"><strong>{{name}}</strong> <span class="dhpi-tag form-{{formKey}}">{{form}}</span>{{#if costs}} <span class="dhpi-cost"><i class="fa-solid fa-coins" inert></i> {{costs}}</span>{{/if}}</div>
+                            <div class="dhpi-feature-text">{{{description}}}</div>
+                        </div>
+                        {{/each}}
+                    </details>
+                    {{/if}}
+
+                    {{#if pages}}
+                    <details class="dhpi-features" open>
+                        <summary>{{subtitle}}</summary>
+                        <ol class="dhpi-pages">{{#each pages}}<li>{{name}}{{#if page}} <span class="dhpi-page">p. {{page}}</span>{{/if}}</li>{{/each}}</ol>
+                    </details>
+                    {{/if}}
+                </article>
+                {{/each}}
+            </div>
+        </section>
+        {{/each}}
+    </div>
+
+    <footer class="dhpi-footer">
+        <button type="button" data-action="back"><i class="fa-solid fa-arrow-left" inert></i> {{localize "DHPI.Back"}}</button>
+        <button type="button" class="dhpi-primary" data-action="import" {{#unless selectedCount}}disabled{{/unless}}>
+            <i class="fa-solid fa-file-import" inert></i> <span>{{localize "DHPI.ImportSelected" count=selectedCount}}</span>
+        </button>
+    </footer>
+    {{/if}}
+</section>

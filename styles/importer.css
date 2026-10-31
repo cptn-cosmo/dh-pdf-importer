@@ -1,0 +1,621 @@
+.dh-pdf-importer {
+    --dhpi-gold: var(--golden, #f3c267);
+    --dhpi-accent: light-dark(#18162e, var(--golden, #f3c267));
+    --dhpi-card-bg: light-dark(#fffaf0, #1c1b2b);
+    --dhpi-card-border: light-dark(#ddd0b9, #4a4458);
+    --dhpi-muted: light-dark(#5d5866, #b8b2c4);
+    --dhpi-warning: light-dark(#a35a00, #ffb35c);
+    --dhpi-passive: light-dark(#3c6e8f, #7fb8de);
+    --dhpi-action: light-dark(#8f3c3c, #e58f8f);
+    --dhpi-reaction: light-dark(#4f7a3a, #9ad27e);
+    --dhpi-evolution: light-dark(#6d4a8f, #c39be6);
+    --dhpi-title-font: var(--dh-font-title, 'Cinzel'), serif;
+    --dhpi-body-font: var(--dh-font-body, 'Montserrat'), sans-serif;
+    min-width: 560px;
+    min-height: 420px;
+}
+
+.dh-pdf-importer .window-content {
+    padding: 0;
+    overflow: hidden;
+}
+
+.dh-pdf-importer .dhpi-body {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    font-family: var(--dhpi-body-font);
+}
+
+/* ---------- File selection ---------- */
+
+.dh-pdf-importer .dhpi-dropzone {
+    flex: 1;
+    margin: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 2px dashed var(--dhpi-card-border);
+    border-radius: 12px;
+    text-align: center;
+    padding: 2rem;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.dh-pdf-importer .dhpi-dropzone.dragging {
+    border-color: var(--dhpi-gold);
+    background: color-mix(in srgb, var(--dhpi-gold) 10%, transparent);
+}
+
+.dh-pdf-importer .dhpi-drop-icon {
+    font-size: 3.5rem;
+    color: var(--dhpi-gold);
+}
+
+.dh-pdf-importer .dhpi-dropzone h2 {
+    font-family: var(--dhpi-title-font);
+    border: none;
+    margin: 0.5rem 0 0;
+}
+
+.dh-pdf-importer .dhpi-select-buttons {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.dh-pdf-importer .dhpi-select-buttons button {
+    padding: 0.5rem 1rem;
+}
+
+.dh-pdf-importer .dhpi-supported {
+    color: var(--dhpi-muted);
+    font-size: var(--font-size-12, 12px);
+    max-width: 32rem;
+}
+
+/* ---------- Progress ---------- */
+
+.dh-pdf-importer .dhpi-progress {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.dh-pdf-importer .dhpi-progress > i {
+    font-size: 2rem;
+    color: var(--dhpi-gold);
+}
+
+.dh-pdf-importer .dhpi-progress-track {
+    width: 60%;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--dhpi-card-border);
+    overflow: hidden;
+}
+
+.dh-pdf-importer .dhpi-progress-fill {
+    height: 100%;
+    background: var(--dhpi-gold);
+    transition: width 0.2s;
+}
+
+/* ---------- Review header ---------- */
+
+.dh-pdf-importer .dhpi-header {
+    flex: none;
+    padding: 0.75rem 1rem 0.5rem;
+    border-bottom: 1px solid var(--dhpi-card-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dh-pdf-importer .dhpi-file {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+}
+
+.dh-pdf-importer .dhpi-file > i {
+    color: var(--dhpi-gold);
+}
+
+.dh-pdf-importer .dhpi-file-name {
+    font-family: var(--dhpi-title-font);
+    font-weight: bold;
+    font-size: var(--font-size-16, 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dh-pdf-importer .dhpi-file-count {
+    color: var(--dhpi-muted);
+    white-space: nowrap;
+}
+
+.dh-pdf-importer .dhpi-warning {
+    margin: 0;
+    color: var(--dhpi-warning);
+}
+
+.dh-pdf-importer .dhpi-attribution {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+    padding: 0.4rem 0.75rem 0.6rem;
+    border-radius: 6px;
+}
+
+.dh-pdf-importer .dhpi-attribution legend {
+    padding: 0 0.25rem;
+    font-weight: bold;
+}
+
+.dh-pdf-importer .dhpi-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 10rem;
+    min-width: 0;
+}
+
+.dh-pdf-importer .dhpi-field.wide {
+    flex: 2 1 14rem;
+}
+
+.dh-pdf-importer .dhpi-field.narrow {
+    flex: 0 0 6rem;
+}
+
+.dh-pdf-importer .dhpi-field > span {
+    font-size: var(--font-size-11, 11px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.dh-pdf-importer .dhpi-filters {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    flex: 1 1 auto;
+}
+
+.dh-pdf-importer .dhpi-chip {
+    flex: none;
+    width: auto;
+    border-radius: 999px;
+    padding: 0.1rem 0.7rem;
+    line-height: 1.6;
+}
+
+.dh-pdf-importer .dhpi-chip.active {
+    background: var(--dhpi-accent);
+    color: light-dark(#fff, #18162e);
+    border-color: var(--dhpi-accent);
+}
+
+.dh-pdf-importer .dhpi-chip-count {
+    opacity: 0.7;
+    margin-left: 0.25rem;
+}
+
+.dh-pdf-importer .dhpi-toolbar input[type='search'] {
+    flex: 0 1 14rem;
+}
+
+.dh-pdf-importer .dhpi-small {
+    flex: none;
+    width: auto;
+    padding: 0.1rem 0.6rem;
+}
+
+/* ---------- Results ---------- */
+
+.dh-pdf-importer .dhpi-results {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1rem 1rem;
+}
+
+.dh-pdf-importer .dhpi-group.hidden,
+.dh-pdf-importer .dhpi-card.filtered {
+    display: none;
+}
+
+.dh-pdf-importer .dhpi-group-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--dhpi-title-font);
+    margin: 0.75rem 0 0.5rem;
+    border-bottom: 1px solid var(--dhpi-card-border);
+    padding-bottom: 0.25rem;
+}
+
+.dh-pdf-importer .dhpi-group-title > input {
+    margin: 0;
+}
+
+.dh-pdf-importer .dhpi-group-count {
+    margin-left: auto;
+    font-family: var(--dhpi-body-font);
+    font-size: var(--font-size-12, 12px);
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+    gap: 0.75rem;
+    align-items: start;
+}
+
+.dh-pdf-importer .dhpi-card {
+    position: relative;
+    background: var(--dhpi-card-bg);
+    border: 1px solid var(--dhpi-card-border);
+    border-top: 4px solid var(--dhpi-gold);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem 0.7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: var(--font-size-13, 13px);
+    transition: opacity 0.15s, filter 0.15s;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+}
+
+.dh-pdf-importer .dhpi-card.kind-environment {
+    border-top-color: #6aa36f;
+}
+
+.dh-pdf-importer .dhpi-card.kind-weapon,
+.dh-pdf-importer .dhpi-card.kind-armor {
+    border-top-color: #8c9bb5;
+}
+
+.dh-pdf-importer .dhpi-card.kind-journal {
+    border-top-color: #b58c6a;
+}
+
+.dh-pdf-importer .dhpi-card.deselected {
+    opacity: 0.5;
+    filter: grayscale(0.7);
+}
+
+.dh-pdf-importer .dhpi-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+}
+
+.dh-pdf-importer .dhpi-card-header > input[type='checkbox'] {
+    margin: 0.25rem 0 0;
+    flex: none;
+}
+
+.dh-pdf-importer .dhpi-card-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.dh-pdf-importer input.dhpi-name {
+    width: 100%;
+    font-family: var(--dhpi-title-font);
+    font-weight: bold;
+    font-size: var(--font-size-15, 15px);
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 0 2px;
+    height: auto;
+}
+
+.dh-pdf-importer input.dhpi-name:hover,
+.dh-pdf-importer input.dhpi-name:focus {
+    border-color: var(--dhpi-card-border);
+}
+
+.dh-pdf-importer .dhpi-subtitle {
+    font-style: italic;
+    color: var(--dhpi-muted);
+    padding-left: 3px;
+}
+
+.dh-pdf-importer .dhpi-page {
+    flex: none;
+    font-size: var(--font-size-11, 11px);
+    color: var(--dhpi-muted);
+    border: 1px solid var(--dhpi-card-border);
+    border-radius: 4px;
+    padding: 0 0.3rem;
+}
+
+.dh-pdf-importer .dhpi-description {
+    font-style: italic;
+}
+
+.dh-pdf-importer .dhpi-description p,
+.dh-pdf-importer .dhpi-line,
+.dh-pdf-importer .dhpi-feature-text p {
+    margin: 0;
+}
+
+.dh-pdf-importer .dhpi-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.15rem 0;
+}
+
+.dh-pdf-importer .dhpi-stats > div {
+    flex: 1 1 auto;
+    text-align: center;
+    border: 1px solid var(--dhpi-card-border);
+    border-radius: 6px;
+    padding: 0.1rem 0.4rem;
+    background: color-mix(in srgb, var(--dhpi-gold) 8%, transparent);
+}
+
+.dh-pdf-importer .dhpi-stats dt {
+    font-size: var(--font-size-10, 10px);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-stats dd {
+    margin: 0;
+    font-weight: bold;
+    font-size: var(--font-size-14, 14px);
+}
+
+.dh-pdf-importer .dhpi-card-warnings {
+    list-style: none;
+    margin: 0;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    color: var(--dhpi-warning);
+    background: color-mix(in srgb, var(--dhpi-warning) 12%, transparent);
+    font-size: var(--font-size-12, 12px);
+}
+
+.dh-pdf-importer .dhpi-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.dh-pdf-importer .dhpi-features {
+    border-top: 1px dashed var(--dhpi-card-border);
+    padding-top: 0.3rem;
+}
+
+.dh-pdf-importer .dhpi-features summary {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.dh-pdf-importer .dhpi-features[open] .dhpi-feature-names {
+    display: none;
+}
+
+.dh-pdf-importer .dhpi-feature-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.25rem;
+    font-weight: normal;
+}
+
+.dh-pdf-importer .dhpi-tag {
+    display: inline-block;
+    font-size: var(--font-size-11, 11px);
+    border-radius: 4px;
+    padding: 0 0.35rem;
+    border: 1px solid currentColor;
+    font-weight: normal;
+}
+
+.dh-pdf-importer .dhpi-tag.form-passive {
+    color: var(--dhpi-passive);
+}
+
+.dh-pdf-importer .dhpi-tag.form-action {
+    color: var(--dhpi-action);
+}
+
+.dh-pdf-importer .dhpi-tag.form-reaction {
+    color: var(--dhpi-reaction);
+}
+
+.dh-pdf-importer .dhpi-tag.form-evolution {
+    color: var(--dhpi-evolution);
+}
+
+.dh-pdf-importer .dhpi-feature {
+    margin-top: 0.45rem;
+}
+
+.dh-pdf-importer .dhpi-cost {
+    font-size: var(--font-size-11, 11px);
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-feature-text {
+    margin-top: 0.15rem;
+}
+
+.dh-pdf-importer .dhpi-feature-text p + p,
+.dh-pdf-importer .dhpi-feature-text section {
+    margin-top: 0.3rem;
+}
+
+.dh-pdf-importer .dhpi-feature-text section.secret {
+    border-left: 3px solid var(--dhpi-card-border);
+    padding-left: 0.4rem;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-feature-text ul {
+    margin: 0.2rem 0;
+    padding-left: 1.2rem;
+}
+
+.dh-pdf-importer .dhpi-pages {
+    margin: 0.3rem 0 0;
+    padding-left: 1.4rem;
+    max-height: 14rem;
+    overflow-y: auto;
+}
+
+.dh-pdf-importer .dhpi-pages .dhpi-page {
+    margin-left: 0.25rem;
+}
+
+/* ---------- Footer ---------- */
+
+.dh-pdf-importer .dhpi-footer {
+    flex: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--dhpi-card-border);
+}
+
+.dh-pdf-importer .dhpi-footer button {
+    flex: 0 1 auto;
+    width: auto;
+    padding: 0.3rem 1rem;
+}
+
+.dh-pdf-importer .dhpi-footer .dhpi-primary {
+    font-weight: bold;
+    border-color: var(--dhpi-gold);
+}
+
+/* Directory button */
+.dhpi-directory-button {
+    flex: 1 1 100%;
+}
+
+.dh-pdf-importer .kind-weapon .dhpi-description,
+.dh-pdf-importer .kind-armor .dhpi-description {
+    font-style: normal;
+}
+
+.dh-pdf-importer .dhpi-destinations {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+    padding: 0.4rem 0.75rem 0.6rem;
+    border-radius: 6px;
+}
+
+.dh-pdf-importer .dhpi-destinations legend {
+    padding: 0 0.25rem;
+    font-weight: bold;
+}
+
+.dh-pdf-importer .dhpi-destinations .dhpi-field {
+    flex: 1 1 11rem;
+}
+
+.dh-pdf-importer .dhpi-separate {
+    flex: none;
+    padding-bottom: 0.3rem;
+}
+
+.dh-pdf-importer .dhpi-separate.disabled {
+    opacity: 0.5;
+}
+
+.dh-pdf-importer .dhpi-folder-example {
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: var(--font-size-12, 12px);
+    color: var(--dhpi-muted);
+}
+
+/* ---------- Adversary links ---------- */
+
+.dh-pdf-importer .dhpi-adversaries {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.dh-pdf-importer .dhpi-link-summary {
+    font-size: var(--font-size-11, 11px);
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-adversary-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.6rem;
+}
+
+.dh-pdf-importer .dhpi-adversary-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.dh-pdf-importer .dhpi-group-label {
+    font-style: italic;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-chip-link {
+    font-size: var(--font-size-12, 12px);
+    border-radius: 4px;
+    padding: 0 0.35rem;
+    border: 1px solid var(--dhpi-card-border);
+}
+
+.dh-pdf-importer .dhpi-chip-link.linked {
+    border-color: var(--dhpi-reaction);
+    color: var(--dhpi-reaction);
+}
+
+.dh-pdf-importer .dhpi-chip-link.unlinked {
+    border-style: dashed;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-chip-link.generic {
+    border: none;
+    color: var(--dhpi-muted);
+    font-style: italic;
+}
+
+.dh-pdf-importer .dhpi-link {
+    color: var(--dhpi-reaction);
+    border-bottom: 1px dotted currentColor;
+    white-space: nowrap;
+}
+
+.dh-pdf-importer .dhpi-link > i {
+    font-size: 0.75em;
+}
