@@ -129,7 +129,9 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
         const bullet = BULLET.test(text);
         // A change of typeface after a finished sentence starts a new paragraph (e.g. GM questions).
         const fontChanged = prev && prev.font !== line.font && /[.!?:”"]$/.test(prev.text.trim());
-        const blockChanged = prev && prev.block !== line.block;
+        // OCR text has no fonts and every recognised line can be its own layout block, so paragraphs
+        // are told apart by extra vertical space instead.
+        const blockChanged = prev && (line.ocr ? ocrGap(prev, line) : prev.block !== line.block);
         const heading = line.bold && !prev?.bold && text.length < 60;
         if (!current || bullet || fontChanged || blockChanged || heading || (prev?.bold && !line.bold)) {
             current = { runs: [], bullet, font: line.font };
@@ -144,6 +146,8 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
         current.runs.push(...copy);
         prev = line;
     }
+
+    if (secretQuestions) paragraphs.splice(0, paragraphs.length, ...paragraphs.flatMap(splitTrailingQuestions));
 
     let html = '';
     let list = false;
@@ -166,6 +170,42 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
 }
 
 const isQuestion = text => text.endsWith('?') && !/[.!:]\s*$/.test(text);
+
+/** Is there more space between two OCR lines than ordinary line spacing? */
+function ocrGap(prev, line) {
+    if (prev.page !== line.page) return true;
+    const gap = line.y - prev.y;
+    return gap < 0 || gap > Math.max(prev.size, line.size) * 1.9;
+}
+
+/**
+ * "…the PCs escape the canyon. What stone forms the canyon? What sounds echo?" -> rules text and a
+ * separate question paragraph, for PDFs where the GM questions don't use a different typeface.
+ */
+function splitTrailingQuestions(paragraph) {
+    if (paragraph.bullet) return [paragraph];
+    const text = paragraph.runs.map(r => r.text).join('');
+    const match = text.match(/^(.*?[.!:”"])\s+((?:[A-Z“"][^.!?]*\?\s*)+)$/s);
+    if (!match || match[1].length < 20) return [paragraph];
+    const offset = text.length - match[2].length;
+    return [
+        { ...paragraph, runs: takeRuns(paragraph.runs, 0, offset) },
+        { ...paragraph, runs: takeRuns(paragraph.runs, offset, text.length) }
+    ];
+}
+
+/** The part of a list of runs between two character offsets. */
+function takeRuns(runs, start, end) {
+    const result = [];
+    let position = 0;
+    for (const run of runs) {
+        const from = Math.max(start, position);
+        const to = Math.min(end, position + run.text.length);
+        if (to > from) result.push({ ...run, text: run.text.slice(from - position, to - position) });
+        position += run.text.length;
+    }
+    return result;
+}
 
 /** Foundry compatible random id, independent of the `foundry` global so it can run in tests. */
 export function randomId(length = 16) {

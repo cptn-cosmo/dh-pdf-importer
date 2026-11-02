@@ -56,19 +56,28 @@ globalThis.CONFIG = {
 };
 
 const { extractPdf } = await import('../scripts/pdf/extract.mjs');
+const { applyNodeOcr } = await import('./ocr-node.mjs');
 const { parseDocument } = await import('../scripts/parsers/index.mjs');
 const { default: PdfImporter } = await import('../scripts/apps/pdf-importer.mjs');
 const { collectCandidates } = await import('../scripts/linker.mjs');
 
 const file = process.argv[2];
 const app = new PdfImporter();
-app.result = parseDocument(await extractPdf(await loadNodePdfjs(), new Uint8Array(fs.readFileSync(file))), { fileName: path.basename(file) });
+app.extracted = await extractPdf(await loadNodePdfjs(), new Uint8Array(fs.readFileSync(file)));
+if (process.argv.includes('--ocr')) applyNodeOcr(file, app.extracted);
+if (process.argv.includes('--recover')) {
+    const { recoverGlyphs } = await import('../scripts/pdf/glyphs.mjs');
+    const { ocrRegionsNode } = await import('./ocr-node.mjs');
+    app.glyphsRecovered = (await recoverGlyphs(app.extracted.pages, async regions => ocrRegionsNode(file, regions))).resolved;
+}
+app.result = parseDocument(app.extracted, { fileName: path.basename(file) });
 for (const e of app.result.entries) e.selected = true;
 if (app.result.entries[1]) app.result.entries[1].selected = false;
 app.attribution = { ...app.result.attribution };
 app.linkIndex = await collectCandidates(app.result.entries);
 app.fileName = path.basename(file);
 app.stage = 'review';
+app.ocrSelection = app.result.emptyPages.join(', ');
 const context = await app._prepareContext({});
 
 Handlebars.registerHelper('eq', (a, b) => a === b);

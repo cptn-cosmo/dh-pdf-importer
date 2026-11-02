@@ -27,6 +27,26 @@
 
 let pdfjsPromise = null;
 
+import { MISSING_GLYPH, PRIVATE_USE, resolveGlyphs } from './glyphs.mjs';
+
+export { MISSING_GLYPH };
+
+/**
+ * Type 3 fonts often report a font size of around 1 because their glyphs are scaled by the font matrix.
+ * Give such items the size of the text next to them on the same line.
+ * @param {object[]} items
+ */
+function fixTinySizes(items) {
+    const normal = items.filter(i => i.size >= 3 && i.str.trim());
+    for (const item of items) {
+        if (item.size >= 3) continue;
+        const neighbour = normal
+            .filter(n => Math.abs(n.y - item.y) < 8)
+            .sort((a, b) => Math.abs(a.x - item.x) - Math.abs(b.x - item.x))[0];
+        item.size = neighbour?.size ?? (normal[0]?.size || 10);
+    }
+}
+
 /**
  * Load the copy of pdf.js bundled with Foundry VTT.
  * @returns {Promise<object>}
@@ -87,22 +107,30 @@ export async function extractPdf(pdfjs, data, { onProgress } = {}) {
         for (const item of content.items) {
             if (!item.str) continue;
             const [a, b, c, d, e, f] = item.transform;
-            // Skip rotated text, which is almost always decorative.
-            if (Math.abs(b) > Math.abs(a) * 0.1 || Math.abs(c) > Math.abs(d) * 0.1) continue;
-            const size = Math.hypot(c, d) || Math.abs(a) || item.height;
+            // Skip rotated text, which is almost always decorative. A horizontal skew (c without b) is a
+            // synthetic italic and is kept.
+            if (Math.abs(b) > Math.abs(a) * 0.1 || Math.abs(d) < Math.abs(c)) continue;
+            const skewed = Math.abs(c) > Math.abs(d) * 0.1;
+            const size = Math.abs(d) || Math.abs(a) || item.height;
             if (!size) continue;
             const font = fontNames.get(item.fontName) ?? '';
+            // Glyphs without a Unicode mapping come out as private-use code points. Keep the raw text and
+            // the font so they can be recovered later (see glyphs.mjs); show them as MISSING_GLYPH meanwhile.
+            const missing = PRIVATE_USE.test(item.str);
+            PRIVATE_USE.lastIndex = 0;
             items.push({
-                str: item.str,
+                str: missing ? resolveGlyphs(item.str, item.fontName) : item.str,
+                ...(missing ? { raw: item.str, fontId: item.fontName } : {}),
                 x: e - x0,
                 y: y1 - f,
                 w: item.width,
                 size,
                 font,
                 bold: /bold|black|heavy|semibold|demi/i.test(font),
-                italic: /italic|oblique|[-,]it$/i.test(font)
+                italic: skewed || /italic|oblique|[-,]it$/i.test(font)
             });
         }
+        fixTinySizes(items);
         pages.push({ number: n, width: x1 - x0, height: y1 - y0, items });
         page.cleanup();
         onProgress?.(n, doc.numPages);

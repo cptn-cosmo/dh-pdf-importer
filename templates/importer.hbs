@@ -31,6 +31,51 @@
         <p class="dhpi-warning"><i class="fa-solid fa-triangle-exclamation" inert></i> {{this}}</p>
         {{/each}}
 
+        {{#if ocr.used}}
+        <div class="dhpi-notice dhpi-notice-info">
+            <i class="fa-solid fa-circle-info" inert></i>
+            <div>
+                <strong>{{#if ocr.onlyOcr}}{{localize "DHPI.OCR.usedAllTitle"}}{{else}}{{localize "DHPI.OCR.usedTitle"}}{{/if}}</strong>
+                <p>{{localize "DHPI.OCR.usedHint" pages=ocr.recognised}}</p>
+            </div>
+        </div>
+        {{/if}}
+
+        {{#if glyphs.offer}}
+        <div class="dhpi-notice dhpi-notice-ocr">
+            <i class="fa-solid fa-circle-question" inert></i>
+            <div>
+                <strong>{{localize "DHPI.Glyphs.offerTitle" count=glyphs.missing}}</strong>
+                <p>{{localize "DHPI.Glyphs.offerHint"}}</p>
+                <div class="dhpi-ocr-controls">
+                    <button type="button" data-action="recoverGlyphs"><i class="fa-solid fa-wand-magic-sparkles" inert></i> {{localize "DHPI.Glyphs.run"}}</button>
+                </div>
+            </div>
+        </div>
+        {{else if glyphs.recovered}}
+        <div class="dhpi-notice dhpi-notice-info">
+            <i class="fa-solid fa-circle-info" inert></i>
+            <div>
+                <strong>{{localize "DHPI.Glyphs.recoveredTitle" count=glyphs.recovered}}</strong>
+                <p>{{localize "DHPI.Glyphs.recoveredHint"}}</p>
+            </div>
+        </div>
+        {{/if}}
+
+        {{#if ocr.offer}}
+        <div class="dhpi-notice dhpi-notice-ocr">
+            <i class="fa-solid fa-file-image" inert></i>
+            <div>
+                <strong>{{#if ocr.allImages}}{{localize "DHPI.OCR.offerAllTitle"}}{{else}}{{localize "DHPI.OCR.offerTitle" count=ocr.count pages=ocr.pages}}{{/if}}</strong>
+                <p>{{localize "DHPI.OCR.offerHint"}}</p>
+                <div class="dhpi-ocr-controls">
+                    <label>{{localize "DHPI.OCR.pages"}} <input type="text" name="ocrPages" value="{{ocr.selection}}" placeholder="{{ocr.pages}}"></label>
+                    <button type="button" data-action="runOcr"><i class="fa-solid fa-wand-magic-sparkles" inert></i> {{localize "DHPI.OCR.run"}}</button>
+                </div>
+            </div>
+        </div>
+        {{/if}}
+
         <fieldset class="dhpi-attribution">
             <legend><i class="fa-solid fa-signature" inert></i> {{localize "DHPI.Attribution.title"}}</legend>
             <label class="dhpi-field wide">
@@ -102,6 +147,7 @@
                             <input type="text" class="dhpi-name" data-rename="{{id}}" value="{{name}}" aria-label="{{localize "DHPI.Name"}}">
                             <div class="dhpi-subtitle">{{subtitle}}</div>
                         </div>
+                        {{#if ocr}}<span class="dhpi-page dhpi-ocr-badge" data-tooltip="{{localize "DHPI.OCR.badge"}}"><i class="fa-solid fa-eye" inert></i> OCR</span>{{/if}}
                         {{#if page}}<span class="dhpi-page" data-tooltip="{{localize "DHPI.PageHint"}}">p. {{page}}</span>{{/if}}
                     </header>
 

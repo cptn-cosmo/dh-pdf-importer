@@ -19,21 +19,35 @@ Every imported document gets `system.attribution` (source, printed page and arti
 
 | Content | Notes |
 | --- | --- |
-| Adversaries | Official layout (`Difficulty: 14 \| Thresholds: 8/15 \| HP: 8 \| Stress: 3`, `ATK: +3 \| Claws: Very Close \| 1d12+2 phy`) and the compact layout (`Diff 13, Th 7/13, HP 6, Stress 3`). This includes horde HP and damage, minions, experiences, multi-phase adversaries ("Young Thorn Dragon: Laughing Lasher") and features with their form. Costs such as *Mark a Stress* or *Spend 2 Fear* become actions. |
+| Adversaries | Official layout (`Difficulty: 14 \| Thresholds: 8/15 \| HP: 8 \| Stress: 3`, `ATK: +3 \| Claws: Very Close \| 1d12+2 phy`), the compact layout (`Diff 13, Th 7/13, HP 6, Stress 3`) and the Quickstart card layout (`Bite - Melee - 1d6+3 phy`, `Attack Modifier: +1`, `Major 4 \| Severe 8`, HP and Stress printed as boxes `O O O`). Stats printed in a side column are found wherever they end up in reading order. This includes horde HP and damage, minions, experiences, multi-phase adversaries ("Young Thorn Dragon: Laughing Lasher") and features with their form. Costs such as *Mark a Stress* or *Spend 2 Fear* become actions. |
 | Environments | Tier/type, impulses, difficulty, potential adversaries and features. GM questions are stored as secret blocks. Potential adversaries are linked to adversaries from the same import, the world, or compendiums (the system's adversary compendium first), including group notation such as "Guards (Arcanist, Head)" → *Arcanist Guard*, *Head Guard* and multi-phase adversaries. Adversary names in feature text ("introduce a Zombie Pack") become links too. The preview shows what will be linked. |
 | Weapons & armor | Tables with `Name / Trait / Range / Damage / Burden / Feature` or `Name / Base Thresholds / Armor Score / Feature` columns. Tiered rows become one item per tier. |
 | Journal | The rest of the text, as one journal entry with a page per major heading. Text that was imported as a stat block or table is replaced with a link to the new document. |
 
-Image-only pages or PDFs (scans, card sheets) have no text to read and are reported in the preview.
+### Scanned PDFs (OCR)
+
+Pages that contain only images (scans, browser "print to PDF" of an image) are listed in the preview with a **Recognise text (OCR)** button. You can edit the list of pages first, for example to skip covers or maps. OCR runs in the browser with [tesseract.js](https://github.com/naptha/tesseract.js). Its engine and English data (about 15 MB) are downloaded from cdn.jsdelivr.net the first time and cached by the browser, so this needs internet access.
+
+OCR is less accurate than reading text from the PDF. Once it has been used, the preview says so, and each entry from an OCR page is marked **OCR**. Check names, stats and dice before importing. Clean digital scans work well; photographed or low-resolution pages produce misread words.
+
+### Missing characters
+
+Some PDFs use fonts with no text mapping for a few glyphs, often digits. They show on the page, but copying the text loses them, and so does reading it. They are shown as `[?]`, and the entry warns which features are affected.
+
+The preview then offers **Recover missing characters**. It renders a few lines containing each unknown glyph and recognises them with OCR. It then matches the recognised text against the known text around the gaps ("they take [?]d[?] physical" against "they take 2d4 physical") to learn which character each glyph is, and applies that to every place the glyph appears. Only a handful of lines are recognised, so this takes a few seconds.
+
+Image-only pages you don't run OCR on are skipped. Such a PDF can still be imported as a PDF journal page.
 
 ## Development
 
 The parser doesn't depend on Foundry and runs in Node, using the pdf.js build that ships with Foundry (set `PDFJS_PATH` to point at another `pdf.mjs`):
 
 ```sh
-node tests/run.mjs [dir]            # regression test against the sample supplements
+node tests/run.mjs [dir]            # regression test against the sample supplements (OCR cases need pdftoppm + tesseract)
 node tests/parse.mjs file.pdf       # summary of everything recognised
 node tests/dump.mjs file.pdf [page] # laid out lines, for debugging layout issues
+# add --ocr to dump.mjs, parse.mjs or preview.mjs to OCR image-only pages with the tesseract CLI
+node tests/glyphs.mjs file.pdf       # recover glyphs without a text mapping and show the result
 node tests/linker.mjs env.pdf [adversaries.pdf…]  # how many potential adversaries match the system compendium
 node tests/preview.mjs file.pdf out.html  # render the review screen with stubbed Foundry globals
 ```

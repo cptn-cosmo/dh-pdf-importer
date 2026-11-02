@@ -2,11 +2,13 @@
 import fs from 'node:fs';
 import { loadNodePdfjs } from './pdfjs-node.mjs';
 import { extractPdf } from '../scripts/pdf/extract.mjs';
+import { applyNodeOcr } from './ocr-node.mjs';
 import { parseDocument } from '../scripts/parsers/index.mjs';
 
 const pdfjs = await loadNodePdfjs();
 const file = process.argv[2];
 const extracted = await extractPdf(pdfjs, new Uint8Array(fs.readFileSync(file)));
+if (process.argv.includes('--ocr')) applyNodeOcr(file, extracted);
 const result = parseDocument(extracted, { fileName: file.split('/').at(-1) });
 
 if (process.argv.includes('--json')) {

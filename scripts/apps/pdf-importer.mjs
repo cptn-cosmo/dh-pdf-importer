@@ -1,4 +1,6 @@
 import { extractPdf, loadFoundryPdfjs } from '../pdf/extract.mjs';
+import { ocrPages, ocrRegions } from '../pdf/ocr.mjs';
+import { PRIVATE_USE, collectMissingGlyphs, recoverGlyphs } from '../pdf/glyphs.mjs';
 import { parseDocument } from '../parsers/index.mjs';
 import { attributionFor } from '../builders.mjs';
 import { FOLDER_MODES, documentNameFor, importEntries, uploadPdf } from '../importer.mjs';
@@ -14,6 +16,30 @@ const JOURNAL_MODES = ['text', 'pdf', 'both'];
 
 const signed = value => (value == null ? '' : value >= 0 ? `+${value}` : `${value}`);
 
+/** [1, 2, 3, 7] -> "1-3, 7" */
+function formatPageRanges(pages) {
+    const sorted = [...new Set(pages)].sort((a, b) => a - b);
+    const ranges = [];
+    for (const page of sorted) {
+        const last = ranges.at(-1);
+        if (last && page === last[1] + 1) last[1] = page;
+        else ranges.push([page, page]);
+    }
+    return ranges.map(([a, b]) => (a === b ? `${a}` : `${a}-${b}`)).join(', ');
+}
+
+/** "1-3, 7" -> [1, 2, 3, 7] */
+function parsePageRanges(text) {
+    const pages = [];
+    for (const part of (text ?? '').split(/[,;\s]+/)) {
+        const match = part.match(/^(\d+)(?:-(\d+))?$/);
+        if (!match) continue;
+        const [from, to] = [Number(match[1]), Number(match[2] ?? match[1])];
+        for (let n = Math.min(from, to); n <= Math.max(from, to); n++) pages.push(n);
+    }
+    return [...new Set(pages)];
+}
+
 /**
  * Lets a GM pick a PDF, review everything that was recognised in it and import a selection.
  */
@@ -28,6 +54,14 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
     result = null;
 
     fileName = '';
+
+    /** Raw PDF bytes and the extracted pages, kept so image-only pages can be recognised later. */
+    buffer = null;
+
+    extracted = null;
+
+    /** Image-only pages the user wants to run OCR on, as typed ("1-3, 7"). */
+    ocrSelection = '';
 
     /** The PDF as picked: a local file that must be uploaded, or a path already on the server. */
     pdf = { file: null, path: null };
@@ -69,6 +103,8 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             setFilter: PdfImporter.#onSetFilter,
             toggleGroup: PdfImporter.#onToggleGroup,
             back: PdfImporter.#onBack,
+            runOcr: PdfImporter.#onRunOcr,
+            recoverGlyphs: PdfImporter.#onRecoverGlyphs,
             import: PdfImporter.#onImport
         }
     };
@@ -97,6 +133,8 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         context.filter = this.filter;
         context.search = this.search;
         context.warnings = this.#documentWarnings();
+        context.ocr = this.#ocrContext();
+        context.glyphs = this.#glyphContext();
         context.total = entries.length;
         context.selectedCount = entries.filter(e => e.selected).length;
 
@@ -219,13 +257,36 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         }[kind];
     }
 
+    /** The OCR offer for image-only pages, and the accuracy notice once OCR has been used. */
+    #ocrContext() {
+        const { emptyPages, ocrPages: recognised, warnings } = this.result;
+        const total = this.extracted.pages.length;
+        return {
+            offer: emptyPages.length > 0,
+            allImages: warnings.includes('noText'),
+            pages: formatPageRanges(emptyPages),
+            selection: this.ocrSelection,
+            count: emptyPages.length,
+            used: recognised.length > 0,
+            onlyOcr: recognised.length > 0 && recognised.length === total,
+            recognised: formatPageRanges(recognised)
+        };
+    }
+
+    /** Characters the PDF's fonts have no text for, and whether they were recovered. */
+    #glyphContext() {
+        const { items } = collectMissingGlyphs(this.extracted.pages);
+        // Count characters, not places, so the number matches the recovery result.
+        const missing = items
+            .filter(({ item }) => item.str.includes('[?]'))
+            .reduce((n, { item }) => n + (item.raw.match(PRIVATE_USE)?.length ?? 0), 0);
+        return { missing, recovered: this.glyphsRecovered ?? 0, offer: missing > 0 };
+    }
+
     #documentWarnings() {
         const warnings = [];
-        if (this.result.warnings.includes('noText')) warnings.push(game.i18n.localize('DHPI.Warning.noText'));
-        else if (this.result.emptyPages.length) {
-            warnings.push(game.i18n.format('DHPI.Warning.emptyPages', { pages: this.result.emptyPages.join(', ') }));
-        }
-        if (!this.result.entries.some(e => !e.pdfOnly) && !this.result.warnings.includes('noText')) {
+        // Image-only pages are offered for OCR in their own notice (see #ocrContext).
+        if (!this.result.entries.some(e => !e.pdfOnly) && !this.result.emptyPages.length) {
             warnings.push(game.i18n.localize('DHPI.Warning.nothingFound'));
         }
         return warnings;
@@ -241,6 +302,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             selected: entry.selected,
             page: attribution.page,
             warnings: entry.warnings ?? [],
+            ocr: !!entry.ocr,
             searchText: `${entry.name} ${entry.kind} ${entry.type ?? ''}`.toLowerCase()
         };
         const rangeLabel = range => (range ? game.i18n.localize(`DAGGERHEART.CONFIG.Range.${range}.name`) : '');
@@ -409,6 +471,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             this.folders.separateKinds = event.target.checked;
             this.render();
         });
+        html.querySelector('input[name=ocrPages]')?.addEventListener('change', event => (this.ocrSelection = event.target.value));
         const search = html.querySelector('input[name=search]');
         search?.addEventListener('input', event => {
             this.search = event.target.value;
@@ -474,17 +537,15 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         await this.render();
         try {
             const pdfjs = await loadFoundryPdfjs();
-            const extracted = await extractPdf(pdfjs, buffer, {
+            // pdf.js takes ownership of the buffer it is given; keep a copy for OCR.
+            this.buffer = buffer.slice(0);
+            this.glyphsRecovered = 0;
+            this.extracted = await extractPdf(pdfjs, buffer, {
                 onProgress: (value, total) => this.#setProgress(game.i18n.format('DHPI.Progress.page', { value, total }), value, total)
             });
-            this.result = parseDocument(extracted, { fileName });
-            this.#prepareJournal();
-            this.#setProgress(game.i18n.localize('DHPI.Progress.matching'), 1, 1);
-            this.linkIndex = this.result.entries.some(e => e.kind === 'environment')
-                ? await collectCandidates(this.result.entries)
-                : null;
-            for (const entry of this.result.entries) entry.selected = true;
+            await this.#parse();
             this.attribution = { ...this.result.attribution };
+            this.ocrSelection = formatPageRanges(this.result.emptyPages);
             this.filter = 'all';
             this.search = '';
             this.stage = 'review';
@@ -494,6 +555,17 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             this.stage = 'select';
         }
         await this.render();
+    }
+
+    /** Parse the extracted pages and prepare everything the review screen needs. */
+    async #parse() {
+        this.result = parseDocument(this.extracted, { fileName: this.fileName });
+        this.#prepareJournal();
+        this.#setProgress(game.i18n.localize('DHPI.Progress.matching'), 1, 1);
+        this.linkIndex = this.result.entries.some(e => e.kind === 'environment')
+            ? await collectCandidates(this.result.entries)
+            : null;
+        for (const entry of this.result.entries) entry.selected = true;
     }
 
     /** Set the journal's import mode, adding a PDF-only journal when the PDF had no usable text. */
@@ -558,6 +630,80 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         const kind = target.closest('.dhpi-group').dataset.kind;
         for (const entry of this.result.entries.filter(e => e.kind === kind)) entry.selected = target.checked;
         this.render();
+    }
+
+    static async #onRunOcr() {
+        const available = new Set(this.result.emptyPages);
+        const pages = parsePageRanges(this.ocrSelection).filter(n => available.has(n));
+        if (!pages.length) return ui.notifications.warn('DHPI.OCR.noPages', { localize: true });
+
+        this.stage = 'loading';
+        this.progress = { label: game.i18n.localize('DHPI.OCR.loading'), value: 0, total: pages.length };
+        await this.render();
+        try {
+            const pdfjs = await loadFoundryPdfjs();
+            const results = await ocrPages(pdfjs, this.buffer, pages, {
+                onProgress: (stage, value, total) =>
+                    this.#setProgress(
+                        stage === 'loading'
+                            ? game.i18n.localize('DHPI.OCR.loading')
+                            : game.i18n.format('DHPI.OCR.page', { value: Math.min(value + 1, total), total, page: pages[Math.min(value, total - 1)] }),
+                        value,
+                        total
+                    )
+            });
+            for (const page of this.extracted.pages) {
+                if (!results.has(page.number)) continue;
+                page.items = results.get(page.number);
+                page.ocr = true;
+            }
+            const attribution = this.attribution;
+            await this.#parse();
+            // Keep what the user already typed; fill in what OCR found where the fields are empty.
+            this.attribution = {
+                source: attribution.source || this.result.attribution.source,
+                artist: attribution.artist || this.result.attribution.artist,
+                pageOffset: attribution.pageOffset || this.result.attribution.pageOffset
+            };
+            this.ocrSelection = formatPageRanges(this.result.emptyPages);
+            const found = this.result.entries.filter(e => e.ocr).length;
+            ui.notifications.info(game.i18n.format('DHPI.OCR.done', { pages: pages.length, found }));
+        } catch (error) {
+            console.error(`${MODULE_ID} | OCR failed`, error);
+            ui.notifications.error(game.i18n.format('DHPI.OCR.failed', { message: error.message }));
+        }
+        this.stage = 'review';
+        await this.render();
+    }
+
+    static async #onRecoverGlyphs() {
+        this.stage = 'loading';
+        this.progress = { label: game.i18n.localize('DHPI.OCR.loading'), value: 0, total: 1 };
+        await this.render();
+        try {
+            const pdfjs = await loadFoundryPdfjs();
+            const stats = await recoverGlyphs(this.extracted.pages, regions =>
+                ocrRegions(pdfjs, this.buffer, regions, {
+                    onProgress: (stage, value, total) =>
+                        this.#setProgress(
+                            stage === 'loading' ? game.i18n.localize('DHPI.OCR.loading') : game.i18n.format('DHPI.Glyphs.progress', { value, total }),
+                            value,
+                            total
+                        )
+                })
+            );
+            this.glyphsRecovered = (this.glyphsRecovered ?? 0) + stats.resolved;
+            const attribution = this.attribution;
+            await this.#parse();
+            this.attribution = attribution;
+            const key = stats.remaining ? 'DHPI.Glyphs.partial' : 'DHPI.Glyphs.done';
+            ui.notifications.info(game.i18n.format(key, { resolved: stats.resolved, remaining: stats.remaining }));
+        } catch (error) {
+            console.error(`${MODULE_ID} | Glyph recovery failed`, error);
+            ui.notifications.error(game.i18n.format('DHPI.OCR.failed', { message: error.message }));
+        }
+        this.stage = 'review';
+        await this.render();
     }
 
     static #onBack() {

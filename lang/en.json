@@ -21,8 +21,7 @@
         },
         "Found": "{count} entries found",
         "Warning": {
-            "noText": "This PDF contains no extractable text. It is probably scanned or made of images, so it can only be imported as a PDF journal.",
-            "emptyPages": "Pages without text (images only) were skipped: {pages}",
+            "noText": "This PDF contains no extractable text. It is probably scanned or made of images: recognise its text with OCR below, or import it as a PDF journal.",
             "nothingFound": "No importable content was recognised in this PDF.",
             "notPdf": "Please choose a PDF file."
         },
@@ -140,6 +139,32 @@
                 "name": "PDF upload folder",
                 "hint": "Folder in the Foundry data directory where PDFs chosen from your computer are uploaded when a journal includes the PDF. PDFs picked from the Foundry files are used where they are."
             }
+        },
+        "OCR": {
+            "offerTitle": "{count} pages contain only images: {pages}",
+            "offerAllTitle": "This PDF has no text layer, it contains only images (for example a scan).",
+            "offerHint": "Text on these pages can be recognised with OCR. The OCR engine (about 15 MB) is downloaded from cdn.jsdelivr.net the first time and cached by your browser. Recognition takes a few seconds per page.",
+            "pages": "Pages",
+            "run": "Recognise text (OCR)",
+            "loading": "Loading the OCR engine…",
+            "page": "Recognising page {page} ({value} of {total})…",
+            "noPages": "None of the entered pages are image-only pages.",
+            "done": "Recognised text on {pages} pages; {found} entries found there.",
+            "failed": "OCR failed: {message}",
+            "usedTitle": "Some contents were detected via OCR",
+            "usedAllTitle": "The contents were detected via OCR",
+            "usedHint": "Text on pages {pages} was recognised from images, which is not as accurate as reading text from the PDF. Entries marked OCR may contain misread words or numbers: check names, stats and dice before importing.",
+            "badge": "Detected via OCR: check for misread words or numbers"
+        },
+        "Glyphs": {
+            "offerTitle": "{count} characters have no text in this PDF (shown as [?])",
+            "offerHint": "The PDF draws them (often numbers such as dice), but its fonts don't say which characters they are, so they can't be copied or read. They can be recovered by recognising a few lines of the rendered page with OCR; the result is applied to every place the same character appears. The OCR engine (about 15 MB) is downloaded from cdn.jsdelivr.net the first time.",
+            "run": "Recover missing characters",
+            "progress": "Recognising sample lines ({value} of {total})…",
+            "done": "Recovered {resolved} missing characters.",
+            "partial": "Recovered {resolved} missing characters; {remaining} places could not be recovered and still show [?].",
+            "recoveredTitle": "{count} missing characters were recovered via OCR",
+            "recoveredHint": "These characters were read from the rendered page because the PDF has no text for them. This is reliable for clear text, but check numbers and dice in the affected features."
         }
     }
 }

@@ -630,3 +630,71 @@
 .dh-pdf-importer .dhpi-link > i {
     font-size: 0.75em;
 }
+
+/* ---------- OCR ---------- */
+
+.dh-pdf-importer .dhpi-notice {
+    display: flex;
+    gap: 0.6rem;
+    align-items: flex-start;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--dhpi-card-border);
+}
+
+.dh-pdf-importer .dhpi-notice > i {
+    font-size: 1.2rem;
+    margin-top: 0.1rem;
+}
+
+.dh-pdf-importer .dhpi-notice p {
+    margin: 0.15rem 0 0;
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-notice-info {
+    border-color: var(--dhpi-passive);
+    background: color-mix(in srgb, var(--dhpi-passive) 10%, transparent);
+}
+
+.dh-pdf-importer .dhpi-notice-info > i {
+    color: var(--dhpi-passive);
+}
+
+.dh-pdf-importer .dhpi-notice-ocr {
+    border-color: var(--dhpi-warning);
+    background: color-mix(in srgb, var(--dhpi-warning) 8%, transparent);
+}
+
+.dh-pdf-importer .dhpi-notice-ocr > i {
+    color: var(--dhpi-warning);
+}
+
+.dh-pdf-importer .dhpi-ocr-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+}
+
+.dh-pdf-importer .dhpi-ocr-controls label {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.dh-pdf-importer .dhpi-ocr-controls input {
+    width: 10rem;
+}
+
+.dh-pdf-importer .dhpi-ocr-controls button {
+    flex: none;
+    width: auto;
+    padding: 0.15rem 0.8rem;
+}
+
+.dh-pdf-importer .dhpi-ocr-badge {
+    color: var(--dhpi-passive);
+    border-color: var(--dhpi-passive);
+}

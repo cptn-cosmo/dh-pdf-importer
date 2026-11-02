@@ -20,11 +20,44 @@ import {
     splitTopLevel,
     toRange
 } from './common.mjs';
+import { MISSING_GLYPH } from '../pdf/extract.mjs';
 
-const TIER_LINE = /^Tier\s*([1-4])\s+([A-Za-z][A-Za-z/ ]*?)\s*(?:\(\s*(\d+)\s*\/\s*HP\s*\))?\s*$/i;
+const TIER_LINE = /^Tier\s*([1-4])\s*([A-Za-z][A-Za-z/ ]*?)\s*(?:\(\s*(\d+)\s*\/\s*HP\s*\))?\s*$/i;
 const FEATURE_START =
     /^(?<name>[A-Z0-9“"'‘(][^:]{0,80}?)\s*[-–—:]\s*(?<form>Passive|Action|Reaction|Evolution)\s*[:.]\s*/;
-const STAT_LINE = /^(?:Difficulty|Diff)\b\s*:?\s*(?:\d+|Special)/i;
+const STAT_LINE = /^(?:D?ifficulty|Diff)\b\s*:?\s*(?:\d+|Special)/i;
+
+/** Tick boxes printed instead of numbers: "HP: O O O", "Stress: ☐ ☐". */
+const PIP = '[O○◯●◉□☐■▢⬜❍0o]';
+const RANGE = `(?:${RANGE_PATTERN})`;
+const DAMAGE = '[\\dd+\\-−–\\s]+?\\s*\\(?(?:phy\\w*|mag\\w*|stress)\\)?';
+
+/**
+ * Lines holding adversary statistics. They may be printed in a side column, so in reading order they
+ * can appear anywhere in the block (even after the FEATURES heading); they are recognised by strict
+ * patterns rather than position.
+ */
+const ADVERSARY_STAT_LINES = [
+    STAT_LINE,
+    /^(?:Thresholds?|Th)\b\s*:?\s*(?:\d|None)/i,
+    /^Major\b\s*:?\s*\d+/i,
+    new RegExp(`^(?:HP|Stress)\\s*:?\\s*(?:\\d|${PIP}(?:\\s+${PIP})*\\s*$)`, 'i'),
+    /^(?:ATK|Attack Modifier)\s*:?\s*[+\-−–]?\s*\d/i,
+    /^(?:Experiences?|Exp)\b\s*:?\s*[^\n]*?[+\-−–]\s*\d/i,
+    // Bite - Melee - 1d6+3 phy / Dagger: Melee - 1d8+5 phy
+    new RegExp(`^[^:|]{1,40}?\\s*[-:–]\\s*${RANGE}\\s*[-–|]\\s*${DAMAGE}`, 'i'),
+    // Chipped Blade Melee +2, 1d8+2 phy
+    new RegExp(`^[^:|]{1,40}?\\s${RANGE}\\s*[+\\-−–]\\s*\\d+\\s*,\\s*${DAMAGE}`, 'i')
+];
+export const isAdversaryStatLine = text => ADVERSARY_STAT_LINES.some(re => re.test(cleanText(text)));
+
+/** Replace tick boxes by their count: "HP: O O O" -> "HP: 3". */
+function countPips(text) {
+    return text.replace(
+        new RegExp(`\\b(HP|Stress)\\s*:?\\s*((?:${PIP}\\s*){1,30})(?=$|\\||\\n)`, 'gi'),
+        (_m, label, pips) => `${label}: ${pips.replace(/\s/g, '').length}`
+    );
+}
 const FEATURES_HEADING = /^features?$/i;
 
 /**
@@ -88,13 +121,21 @@ export function parseFeatures(lines, { secretQuestions = false } = {}) {
     };
 }
 
+/** Warn about text the PDF's fonts could not provide (see MISSING_GLYPH). */
+function missingGlyphWarnings(features, statText) {
+    const affected = features.filter(f => f.text.includes(MISSING_GLYPH) || f.name.includes(MISSING_GLYPH)).map(f => f.name);
+    if (statText.includes(MISSING_GLYPH)) affected.unshift('Stats');
+    return affected.length ? [`Some characters could not be read and are shown as ${MISSING_GLYPH}: ${affected.join(', ')}`] : [];
+}
+
 /** Build a name from heading lines, joining a phase title with a colon. */
 function joinName(lines) {
     const title = lines.filter(l => l.isTitle);
     const rest = lines.filter(l => !l.isTitle);
     const name = formatName(rest.map(l => l.text).join(' '));
     const full = title.length ? `${formatName(title.map(l => l.text).join(' '))}: ${name}` : name;
-    return full.replace(/^\p{Ll}/u, c => c.toUpperCase());
+    // "Thistlefolk Ambusher (Reference)": the stat block shared by several identical adversaries.
+    return full.replace(/\s*\(Reference\)\s*$/i, '').replace(/^\p{Ll}/u, c => c.toUpperCase());
 }
 
 /** Collect the lines making up the name heading above a tier line. */
@@ -116,6 +157,8 @@ function findName(lines, tierIndex, floor) {
         if (parts.length && !title && caps !== !/[a-z]/.test(parts[0].text)) break;
         if (title) line.isTitle = true;
         if (FEATURES_HEADING.test(line.text) || STAT_LINE.test(line.text)) break;
+        // Running headers and footers carry a page number: "PISTOLHEART - ENVIRONMENTS 9".
+        if (/^\d{1,3}\b|\b\d{1,3}$/.test(line.text.trim()) && /\p{L}{3}/u.test(line.text)) break;
         parts.unshift(line);
     }
     return parts;
@@ -146,16 +189,22 @@ export function findStatBlocks(lines) {
 
         // The block's body font size is that of the line describing it.
         const bodyLines = lines.slice(anchor.index + 1, Math.min(hardEnd, anchor.index + 12));
-        const statLine = bodyLines.find(l => STAT_LINE.test(l.text) || /^Impulses?:/i.test(l.text));
+        const statLine = bodyLines.find(l => isAdversaryStatLine(l.text) || /^Impulses?:/i.test(l.text));
         const bodySize = statLine?.size ?? bodyLines[0]?.size ?? lines[anchor.index].size;
 
         const body = [];
+        const blockLeft = lines[anchor.index].x;
         for (let i = anchor.index + 1; i < hardEnd; i++) {
             const line = lines[i];
             const prev = body.at(-1) ?? lines[anchor.index];
+            // Text starting well left of the block's column (a footer, a centred link) is not part of it.
+            if (line.page === prev.page && line.x < blockLeft - bodySize * 2) break;
+            // Trackers for individual copies of the adversary follow some stat blocks: "Goathog #1 HP: O O O".
+            if (/^\S.{0,40}#\s?\d+\b/.test(line.text) && !matchFeatureStart(lines, i)) break;
             const heading = FEATURES_HEADING.test(line.text.trim());
-            const offSize = line => Math.abs(line.size - bodySize) > bodySize * 0.12;
-            if (!heading && offSize(line)) {
+            // OCR sizes are estimates from line boxes, so allow more variation.
+            const offSize = line => Math.abs(line.size - bodySize) > bodySize * (line.ocr ? 0.5 : 0.12);
+            if (!heading && offSize(line) && !isAdversaryStatLine(line.text)) {
                 // Short decorative captions can sit between columns of a stat block; skip them when a
                 // feature of the same block follows on the same page.
                 let next = i;
@@ -185,6 +234,15 @@ export function findStatBlocks(lines) {
 
 /** Split lines before the first stat line into description and motives/impulses. */
 function splitIntro(intro, labelRe) {
+    const result = splitIntroLines(intro, labelRe);
+    // Some layouts label the flavour text: "Description: A wild half-mountain goat…"
+    const first = result.description[0];
+    const label = first?.text.match(/^Description\s*:\s*/i);
+    if (label) result.description = [{ ...first, text: first.text.slice(label[0].length), runs: sliceRuns(first.runs, label[0].length) }, ...result.description.slice(1)];
+    return result;
+}
+
+function splitIntroLines(intro, labelRe) {
     const labelIndex = intro.findIndex(l => labelRe.test(l.text));
     if (labelIndex >= 0) {
         const label = cleanText(
@@ -228,6 +286,15 @@ function parseAttack(text) {
         new RegExp(`(?:^|\\n)([^\\n]+?)\\s+${range}\\s*([+\\-−–]\\s*\\d+)\\s*,\\s*([\\dd+\\-−\\s]+?)\\s*(phy\\w*|mag\\w*|stress)`, 'i')
     );
     if (match) return { bonus: parseSigned(match[3]), name: cleanText(match[1]), range: toRange(match[2]), damage: parseDamage(match[4]), damageType: damageTypeOf(match[5]) };
+    // Bite - Melee - 1d6+3 phy  /  Dagger: Melee - 1d8+5 (phy), with the bonus on its own line ("ATK: +1",
+    // "Attack Modifier: +1")
+    match = text.match(
+        new RegExp(`(?:^|\\n)([^\\n:|]+?)\\s*[-:–]\\s*${range}\\s*[-–|]\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|stress)`, 'i')
+    );
+    if (match) {
+        const bonus = text.match(/(?:^|\n)(?:ATK|Attack Modifier)\s*:?\s*([+\-−–]?\s*\d+)/i);
+        return { bonus: bonus ? parseSigned(bonus[1]) : 0, name: cleanText(match[1]), range: toRange(match[2]), damage: parseDamage(match[3]), damageType: damageTypeOf(match[4]) };
+    }
     return null;
 }
 
@@ -241,10 +308,13 @@ function parseExperiences(text) {
 }
 
 function thresholds(text) {
-    const match = text.match(/\b(?:Thresholds?|Th)\b\s*:?\s*(\d+|None)(?:\s*\/\s*(\d+|None))?/i);
-    if (!match) return { major: null, severe: null };
     const value = v => (v && /\d/.test(v) ? Number(v) : null);
-    return { major: value(match[1]), severe: value(match[2]) };
+    const match = text.match(/\b(?:Thresholds?|Th)\b\s*:?\s*(\d+|None)(?:\s*\/\s*(\d+|None))?/i);
+    if (match) return { major: value(match[1]), severe: value(match[2]) };
+    // Major 4 | Severe 8
+    const major = text.match(/\bMajor\b\s*:?\s*(\d+|None)/i);
+    const severe = text.match(/\bSevere\b\s*:?\s*(\d+|None)/i);
+    return { major: value(major?.[1]), severe: value(severe?.[1]) };
 }
 
 /**
@@ -253,23 +323,24 @@ function thresholds(text) {
  */
 export function parseAdversary(block) {
     const lines = block.body;
-    const statIndex = lines.findIndex(l => STAT_LINE.test(l.text));
-    if (statIndex < 0) return null;
-    const { description, label: motives } = splitIntro(lines.slice(0, statIndex), /^Motives?\s*(?:&|and)\s*Tactics?\s*:\s*/i);
+    const isStat = line => isAdversaryStatLine(line.text);
+    if (!lines.some(l => STAT_LINE.test(l.text))) return null;
+    const firstStat = lines.findIndex(isStat);
+    const { description, label: motives } = splitIntro(lines.slice(0, firstStat), /^Motives?\s*(?:&|and)\s*Tactics?\s*:\s*/i);
 
-    let featureIndex = lines.findIndex((l, i) => i > statIndex && (FEATURES_HEADING.test(l.text.trim()) || matchFeatureStart(lines, i)));
-    if (featureIndex < 0) featureIndex = lines.length;
-    const statText = lines
-        .slice(statIndex, featureIndex)
-        .map(l => cleanText(l.text))
-        .join('\n');
-    // Notes printed between the stats and the features ("Note: ...") are not part of the stats.
-    const extraIndex = lines.findIndex((l, i) => i > statIndex && i < featureIndex && /^Note:/i.test(l.text));
+    const statText = countPips(
+        lines
+            .filter(isStat)
+            .map(l => cleanText(l.text))
+            .join('\n')
+    );
+    // Everything else after the stats is notes ("Note: ...") followed by the features.
+    const rest = lines.slice(firstStat).filter(l => !isStat(l));
 
     const hp = statText.match(/\bHP\b\s*:?\s*(\d+)/i);
     const stress = statText.match(/\bStress\b\s*:?\s*(\d+)/i);
-    const difficulty = statText.match(/\b(?:Difficulty|Diff)\b\s*:?\s*(\d+)/i);
-    const { preamble, features } = parseFeatures(lines.slice(extraIndex >= 0 ? extraIndex : featureIndex));
+    const difficulty = statText.match(/\b(?:D?ifficulty|Diff)\b\s*:?\s*(\d+)/i);
+    const { preamble, features } = parseFeatures(rest);
 
     const words = block.typeText.toLowerCase().split(/[\s/]+/);
     const type = words.find(w => ADVERSARY_TYPES.includes(w)) ?? 'standard';
@@ -281,6 +352,7 @@ export function parseAdversary(block) {
     if (!stress) warnings.push('Stress not found');
     const attack = parseAttack(statText);
     if (!attack) warnings.push('Standard attack not found');
+    warnings.push(...missingGlyphWarnings(features, statText));
 
     return {
         kind: 'adversary',
@@ -341,7 +413,7 @@ export function parseEnvironment(block) {
         difficulty: difficulty && /\d/.test(difficulty[1]) ? Number(difficulty[1]) : null,
         potentialAdversaries: parsePotentialAdversaries(adversaryText),
         features,
-        warnings: features.length ? [] : ['No features found']
+        warnings: [...(features.length ? [] : ['No features found']), ...missingGlyphWarnings(features, statText)]
     };
 }
 

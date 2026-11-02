@@ -187,7 +187,9 @@ function buildLines(items, page, block) {
             size: top(sizes),
             font: top(fonts),
             italic: visible.every(r => r.italic),
-            bold: visible.every(r => r.bold)
+            bold: visible.every(r => r.bold),
+            // Recognised by OCR: sizes are estimates and there is no font information.
+            ocr: solid.some(p => p.ocr)
         });
     }
     return lines;

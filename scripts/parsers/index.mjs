@@ -20,6 +20,9 @@ export function parseDocument(extracted, { fileName = '' } = {}) {
 
     const entries = [...parseStatBlocks(lines), ...parseEquipment(extracted.pages)];
     entries.sort((a, b) => a.page - b.page);
+    // Text recognised by OCR may contain misread words; let the review screen flag those entries.
+    const ocrPages = new Set(extracted.pages.filter(p => p.ocr).map(p => p.number));
+    for (const entry of entries) if (ocrPages.has(entry.page)) entry.ocr = true;
     entries.forEach((entry, index) => (entry.id = `entry-${index}`));
 
     const attribution = guessAttribution(extracted.info, fileName, lines, pageOffset);
@@ -33,6 +36,7 @@ export function parseDocument(extracted, { fileName = '' } = {}) {
         entries,
         warnings,
         emptyPages,
+        ocrPages: [...ocrPages],
         attribution,
         lines,
         bodySize
