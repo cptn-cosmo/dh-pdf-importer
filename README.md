@@ -36,6 +36,8 @@ Some PDFs use fonts with no text mapping for a few glyphs, often digits. They sh
 
 The preview then offers **Recover missing characters**. It renders a few lines containing each unknown glyph and recognises them with OCR. It then matches the recognised text against the known text around the gaps ("they take [?]d[?] physical" against "they take 2d4 physical") to learn which character each glyph is, and applies that to every place the glyph appears. Only a handful of lines are recognised, so this takes a few seconds.
 
+Fonts that are known to keep alternate figures in the Private Use Area are resolved automatically, without OCR. Currently that's the Questa family (Questa, Questa Sans, Questa Slab, Questa Grande), whose lining and tabular figures are often recorded this way. More fonts can be added to `KNOWN_FONT_GLYPHS` in `scripts/pdf/glyphs.mjs`.
+
 Image-only pages you don't run OCR on are skipped. Such a PDF can still be imported as a PDF journal page.
 
 ## Development

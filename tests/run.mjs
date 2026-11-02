@@ -24,8 +24,10 @@ const EXPECTED = {
     'other/Bastion_of_Hope_-_Item_cards.pdf': { noText: 1 },
     // Files in the project's SRC folder (relative to the repository root)
     '@SRC/Quickstart-Adventure-5-20-2025.pdf': { adversary: 4, journal: 1, attacks: 4 },
-    "@SRC/Ettin's Adversaries_ Fangs & Felons PG14.pdf": { adversary: 3, journal: 1, attacks: 3, missingGlyphs: 2 },
-    // The same PDF with its unmapped digits recovered by OCR of sample lines
+    // Set in Questa Sans with lining figures, which the PDF records as private-use code points; resolved
+    // from the built-in Questa table, so no entry should miss characters
+    "@SRC/Ettin's Adversaries_ Fangs & Felons PG14.pdf": { adversary: 3, journal: 1, attacks: 3, missingGlyphs: 0 },
+    // The page number in an unnamed Type 3 font is left over and recovered by OCR of sample lines
     "@SRC/Ettin's Adversaries_ Fangs & Felons PG14.pdf::recover": { recover: true, adversary: 3, attacks: 3, missingGlyphs: 0, unresolved: 0 },
     '@SRC/DH_Adv_The_Wish_Thief_V2_Adventure_Only.pdf': { adversary: 4, environment: 2, journal: 1, attacks: 4 },
     // Image-only PDFs, read with OCR (needs pdftoppm and the tesseract CLI)

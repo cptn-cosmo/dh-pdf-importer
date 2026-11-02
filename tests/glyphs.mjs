@@ -11,7 +11,7 @@ const extracted = await extractPdf(await loadNodePdfjs(), new Uint8Array(fs.read
 const { items } = collectMissingGlyphs(extracted.pages);
 const samples = pickSamples(extracted.pages, items);
 const texts = ocrRegionsNode(file, samples.map(s => ({ page: s.page, ...lineRegion(s) })));
-samples.forEach((s, i) => console.log(`sample ${JSON.stringify(s.segments.map(x => x.text).join('').replace(/[-]/g, '?'))}\n   OCR ${JSON.stringify(texts[i])}`));
+samples.forEach((s, i) => console.log(`sample ${JSON.stringify(s.segments.map(x => x.text).join('').replace(/[\uE000-\uF8FF]/g, '?'))}\n   OCR ${JSON.stringify(texts[i])}`));
 const stats = await recoverGlyphs(extracted.pages, async regions => ocrRegionsNode(file, regions));
 console.log(stats);
 for (const { item } of items) console.log(`  ${JSON.stringify(item.str)}`);

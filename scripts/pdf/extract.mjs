@@ -27,7 +27,7 @@
 
 let pdfjsPromise = null;
 
-import { MISSING_GLYPH, PRIVATE_USE, resolveGlyphs } from './glyphs.mjs';
+import { MISSING_GLYPH, PRIVATE_USE, applyKnownGlyphs, resolveGlyphs } from './glyphs.mjs';
 
 export { MISSING_GLYPH };
 
@@ -131,6 +131,8 @@ export async function extractPdf(pdfjs, data, { onProgress } = {}) {
             });
         }
         fixTinySizes(items);
+        // Fonts known to keep alternate digits in the private-use area are resolved right away.
+        applyKnownGlyphs([{ items }]);
         pages.push({ number: n, width: x1 - x0, height: y1 - y0, items });
         page.cleanup();
         onProgress?.(n, doc.numPages);

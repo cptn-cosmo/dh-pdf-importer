@@ -9,13 +9,63 @@
  */
 
 export const MISSING_GLYPH = '[?]';
-export const PRIVATE_USE = /[-]/g;
+export const PRIVATE_USE = /[\uE000-\uF8FF]/g;
 
 const glyphKey = (font, char) => `${font}:${char.codePointAt(0).toString(16)}`;
 
 /** The visible text of a raw string, with unknown glyphs replaced from `map` or marked. */
 export function resolveGlyphs(raw, font, map = new Map()) {
-    return raw.replace(/[-]/g, char => map.get(glyphKey(font, char)) ?? '\u0000').replace(/\u0000+/g, MISSING_GLYPH);
+    return raw.replace(/[\uE000-\uF8FF]/g, char => map.get(glyphKey(font, char)) ?? '\u0000').replace(/\u0000+/g, MISSING_GLYPH);
+}
+
+/**
+ * Private-use code points of fonts known to keep alternate figures there. PDFs set with these figures
+ * often record the code points instead of the digits, so they can be resolved without OCR.
+ *
+ * Questa, Questa Sans, Questa Slab and Questa Grande (The Questa Project) share these code points:
+ * proportional lining figures (`zero.pnum`…, used by the `lnum` and `case` features), tabular lining
+ * figures (`zero.tnum`…) and, in Questa and Questa Grande, tabular oldstyle figures (`zero.onum_tab`…).
+ */
+const QUESTA_FIGURES = {
+    0xe534: '0', 0xe536: '1', 0xe537: '2', 0xe538: '3', 0xe529: '4',
+    0xe53a: '5', 0xe53b: '6', 0xe53c: '7', 0xe53d: '8', 0xe53e: '9',
+    0xe53f: '0', 0xe541: '1', 0xe542: '2', 0xe543: '3', 0xe544: '4',
+    0xe545: '5', 0xe546: '6', 0xe547: '7', 0xe548: '8', 0xe549: '9',
+    0xe555: '0', 0xe557: '1', 0xe558: '2', 0xe559: '3', 0xe55a: '4',
+    0xe55b: '5', 0xe55c: '6', 0xe55d: '7', 0xe55e: '8', 0xe55f: '9'
+};
+
+/** Font name pattern -> private-use code point -> character. Names may carry a subset prefix ("OKJQTM+"). */
+const KNOWN_FONT_GLYPHS = [{ font: /^(?:[A-Z]{6}\+)?Questa(?:Sans|Slab|Grande)?\b/i, glyphs: QUESTA_FIGURES }];
+
+/**
+ * Resolve private-use code points of known fonts (see KNOWN_FONT_GLYPHS) in place. Items whose unknown
+ * glyphs are all resolved become ordinary text.
+ * @param {import('./extract.mjs').PageText[]} pages
+ * @returns {number} Number of characters resolved
+ */
+export function applyKnownGlyphs(pages) {
+    let resolved = 0;
+    for (const page of pages) {
+        for (const item of page.items) {
+            if (!item.raw) continue;
+            const glyphs = KNOWN_FONT_GLYPHS.find(k => k.font.test(item.font ?? ''))?.glyphs;
+            if (!glyphs) continue;
+            const map = new Map();
+            for (const char of item.raw.match(PRIVATE_USE) ?? []) {
+                const value = glyphs[char.codePointAt(0)];
+                if (value) map.set(glyphKey(item.fontId, char), value);
+            }
+            if (!map.size) continue;
+            resolved += (item.raw.match(PRIVATE_USE) ?? []).filter(c => map.has(glyphKey(item.fontId, c))).length;
+            item.str = resolveGlyphs(item.raw, item.fontId, map);
+            if (!item.str.includes(MISSING_GLYPH)) {
+                delete item.raw;
+                delete item.fontId;
+            }
+        }
+    }
+    return resolved;
 }
 
 /**
