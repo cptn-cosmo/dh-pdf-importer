@@ -60,6 +60,21 @@
             },
             "journal": {
                 "plural": "Journal"
+            },
+            "class": {
+                "plural": "Classes"
+            },
+            "subclass": {
+                "plural": "Subclasses"
+            },
+            "ancestry": {
+                "plural": "Ancestries"
+            },
+            "community": {
+                "plural": "Communities"
+            },
+            "domainCard": {
+                "plural": "Domain Cards"
             }
         },
         "Search": "Filter by name…",
@@ -165,6 +180,36 @@
             "partial": "Recovered {resolved} missing characters; {remaining} places could not be recovered and still show [?].",
             "recoveredTitle": "{count} missing characters were recovered via OCR",
             "recoveredHint": "These characters were read from the rendered page because the PDF has no text for them. This is reliable for clear text, but check numbers and dice in the affected features."
+        },
+        "Images": {
+            "offerTitle": "Stat blocks printed as pictures?",
+            "offerHint": "Some PDFs paste stat blocks or tables into the page as images, so their text can't be read. This looks for such images and reads them with OCR. Scanning takes a few seconds per page on image-heavy PDFs.",
+            "run": "Find text in images",
+            "scanning": "Looking for images…",
+            "scanPage": "Looking for images on page {value} of {total}…",
+            "region": "Recognising image {value} of {total}…",
+            "done": "Read text in {regions} images on {pages} pages; {found} entries now come from recognised text.",
+            "none": "No images with readable text were found."
+        },
+        "FeaturesFolder": "Features",
+        "Options": {
+            "domains": "Domains",
+            "classItems": "Class items",
+            "questions": "Questions",
+            "questionCount": "{questions} background questions, {connections} connections",
+            "hope": "Hope",
+            "classFeature": "Class feature",
+            "subclassOf": "Subclass of {name}",
+            "trait": "Spellcast trait",
+            "foundation": "Foundation",
+            "specialization": "Specialization",
+            "mastery": "Mastery",
+            "cardSubtitle": "Level {level} {domain} {type}",
+            "level": "Level",
+            "recallCost": "Recall",
+            "cardType": "Type",
+            "newDomainsTitle": "New domains will be added",
+            "newDomainsHint": "These domains aren't part of the Daggerheart system yet: {domains}. Importing adds them to the system's homebrew domains (Configure Settings → Homebrew), where you can change their names, colours and images."
         }
     }
 }

@@ -7,7 +7,7 @@ import { loadNodePdfjs } from './pdfjs-node.mjs';
 import { extractPdf } from '../scripts/pdf/extract.mjs';
 import { parseDocument } from '../scripts/parsers/index.mjs';
 import { buildDocument } from '../scripts/builders.mjs';
-import { applyNodeOcr, ocrRegionsNode } from './ocr-node.mjs';
+import { applyNodeImageOcr, applyNodeOcr, ocrRegionsNode } from './ocr-node.mjs';
 import { recoverGlyphs } from '../scripts/pdf/glyphs.mjs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,15 @@ const EXPECTED = {
     '@SRC/DH_Adv_The_Wish_Thief_V2_Adventure_Only.pdf': { adversary: 4, environment: 2, journal: 1, attacks: 4 },
     // Image-only PDFs, read with OCR (needs pdftoppm and the tesseract CLI)
     '@SRC/Pistolheart_Vol_1_scanned page.pdf': { ocr: true, environment: 2 },
-    '@SRC/The Dying Spire - Adventure and Characters.pdf': { ocr: true, adversary: 5, environment: 1, attacks: 5 }
+    '@SRC/The Dying Spire - Adventure and Characters.pdf': { ocr: true, adversary: 5, environment: 1, attacks: 5 },
+    // Text layer for most pages, but the adversary stat blocks are pictures: nothing without image OCR
+    // Character options in the SRD layout; The New Unknown's own domains and card types
+    '@SRC/PlaytestV03_Fist.pdf': { adversary: 0, journal: 1, class: 4, subclass: 5, ancestry: 7, community: 3, domainCard: 35 },
+    // A scan with an invisible OCR text layer (OCRmyPDF): read as OCR text
+    '@SRC/Hollow_Rider_Dh1e.pdf': { adversary: 1, attacks: 1, withHp: 1, ocrEntries: 1, journal: 1 },
+    // HP and Stress are printed as circles drawn as vector shapes
+    '@SRC/Spa Day - Cavern Crawl - Tier 2.pdf': { adversary: 3, environment: 1, journal: 1, withHp: 3, withStress: 3 },
+    '@SRC/PlaytestV03_Fist.pdf::images': { images: true, adversary: 8, attacks: 8, ocrEntries: 8 }
 };
 
 const hasTesseract = (() => {
@@ -46,15 +54,17 @@ const hasTesseract = (() => {
 
 const pdfjs = await loadNodePdfjs();
 let failures = 0;
-for (const [file, { ocr, recover, ...expected }] of Object.entries(EXPECTED)) {
+for (const [file, { ocr, recover, images, ...expected }] of Object.entries(EXPECTED)) {
     const name = file.replace(/::.*$/, '');
     const full = name.startsWith('@') ? path.join(repo, name.slice(1)) : path.join(root, name);
-    if (!fs.existsSync(full) || ((ocr || recover) && !hasTesseract)) {
-        console.log(`SKIP ${file}${(ocr || recover) && !hasTesseract ? ' (no tesseract)' : ''}`);
+    const needsOcr = ocr || recover || images;
+    if (!fs.existsSync(full) || (needsOcr && !hasTesseract)) {
+        console.log(`SKIP ${file}${needsOcr && !hasTesseract ? ' (no tesseract)' : ''}`);
         continue;
     }
     const extracted = await extractPdf(pdfjs, new Uint8Array(fs.readFileSync(full)));
     if (ocr) applyNodeOcr(full, extracted);
+    if (images) await applyNodeImageOcr(full, extracted, pdfjs);
     let unresolved = 0;
     if (recover) unresolved = (await recoverGlyphs(extracted.pages, async regions => ocrRegionsNode(full, regions))).remaining;
     const result = parseDocument(extracted, { fileName: path.basename(name) });
@@ -62,7 +72,10 @@ for (const [file, { ocr, recover, ...expected }] of Object.entries(EXPECTED)) {
     for (const e of result.entries) {
         actual[e.kind] = (actual[e.kind] ?? 0) + 1;
         if (e.attack) actual.attacks = (actual.attacks ?? 0) + 1;
+        if (e.kind === 'adversary' && e.hp) actual.withHp = (actual.withHp ?? 0) + 1;
+        if (e.kind === 'adversary' && e.stress) actual.withStress = (actual.withStress ?? 0) + 1;
         if (e.secondary) actual.secondary = (actual.secondary ?? 0) + 1;
+        if (e.ocr && e.kind !== 'journal') actual.ocrEntries = (actual.ocrEntries ?? 0) + 1;
         if (e.warnings?.some(w => w.includes('[?]'))) actual.missingGlyphs = (actual.missingGlyphs ?? 0) + 1;
         buildDocument(e, { attribution: result.attribution });
     }

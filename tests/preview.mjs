@@ -45,11 +45,21 @@ globalThis.game = {
     ],
     settings: { get: (_m, key) => (key === 'importOptions' ? { folders: { mode: 'tierType', separateKinds: true } } : ['Example Supplement']) }
 };
+globalThis.CONST = { FOLDER_MAX_DEPTH: 4 };
 globalThis.CONFIG = {
     DH: {
         ACTOR: {
             adversaryTypes: Object.fromEntries(['bruiser', 'horde', 'leader', 'minion', 'ranged', 'skulk', 'social', 'solo', 'standard', 'support'].map(t => [t, { label: `DAGGERHEART.CONFIG.AdversaryType.${t}.label` }])),
             environmentTypes: Object.fromEntries(['exploration', 'social', 'traversal', 'event'].map(t => [t, { label: `DAGGERHEART.CONFIG.EnvironmentType.${t}.label` }]))
+        },
+        DOMAIN: {
+            allDomains: () =>
+                Object.fromEntries(
+                    ['arcana', 'blade', 'bone', 'codex', 'dread', 'grace', 'midnight', 'sage', 'splendor', 'valor'].map(id => [
+                        id,
+                        { id, label: `DAGGERHEART.GENERAL.Domain.${id}.label` }
+                    ])
+                )
         },
         GENERAL: { attributionSources: { daggerheart: { label: 'Daggerheart', values: [{ label: 'Daggerheart SRD' }] } } }
     }
@@ -65,6 +75,11 @@ const file = process.argv[2];
 const app = new PdfImporter();
 app.extracted = await extractPdf(await loadNodePdfjs(), new Uint8Array(fs.readFileSync(file)));
 if (process.argv.includes('--ocr')) applyNodeOcr(file, app.extracted);
+if (process.argv.includes('--images')) {
+    const { applyNodeImageOcr } = await import('./ocr-node.mjs');
+    await applyNodeImageOcr(file, app.extracted, await loadNodePdfjs());
+    app.imagesScanned = true;
+}
 if (process.argv.includes('--recover')) {
     const { recoverGlyphs } = await import('../scripts/pdf/glyphs.mjs');
     const { ocrRegionsNode } = await import('./ocr-node.mjs');
@@ -77,6 +92,8 @@ app.attribution = { ...app.result.attribution };
 app.linkIndex = await collectCandidates(app.result.entries);
 app.fileName = path.basename(file);
 app.stage = 'review';
+const filter = process.argv.find(a => a.startsWith('--filter='));
+if (filter) app.filter = filter.slice(9);
 app.ocrSelection = app.result.emptyPages.join(', ');
 const context = await app._prepareContext({});
 

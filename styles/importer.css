@@ -110,6 +110,9 @@
 
 .dh-pdf-importer .dhpi-header {
     flex: none;
+    /* Several notices can stack up; keep room for the results below. */
+    max-height: 50%;
+    overflow-y: auto;
     padding: 0.75rem 1rem 0.5rem;
     border-bottom: 1px solid var(--dhpi-card-border);
     display: flex;
@@ -697,4 +700,31 @@
 .dh-pdf-importer .dhpi-ocr-badge {
     color: var(--dhpi-passive);
     border-color: var(--dhpi-passive);
+}
+
+.dh-pdf-importer .dhpi-notice-images {
+    align-items: center;
+    padding: 0.35rem 0.75rem;
+}
+
+.dh-pdf-importer .dhpi-notice-images > div {
+    flex: 1;
+}
+
+.dh-pdf-importer .dhpi-notice-images > i {
+    color: var(--dhpi-muted);
+}
+
+.dh-pdf-importer .dhpi-notice-images > button {
+    flex: none;
+    width: auto;
+    padding: 0.15rem 0.8rem;
+}
+
+.dh-pdf-importer .dhpi-card-text p {
+    margin: 0;
+}
+
+.dh-pdf-importer .dhpi-card-text p + p {
+    margin-top: 0.3rem;
 }

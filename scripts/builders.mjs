@@ -1,7 +1,7 @@
 /**
  * Converts parsed entries into Foundry document source data for the Daggerheart system.
  */
-import { randomId } from './parsers/common.mjs';
+import { parseCosts, randomId } from './parsers/common.mjs';
 
 const newId = () => globalThis.foundry?.utils?.randomID?.() ?? randomId();
 
@@ -255,6 +255,129 @@ function buildJournal(entry, attribution, resolveLink, pdfSrc) {
     };
 }
 
+/* -------------------------------------------- */
+/*  Character options                           */
+/* -------------------------------------------- */
+
+/**
+ * A feature Item that an option links to. Option features are separate Items in the system: the
+ * ancestry, community, class or subclass refers to them by UUID.
+ * @param {{name: string, description: string, text: string}} feature
+ * @param {string|null} link   How the parent refers to it: primary/secondary, hope/class, foundation/…
+ */
+function optionFeature(feature, link, attribution) {
+    const costs = parseCosts(feature.text ?? '');
+    const form = costs.length ? 'action' : 'passive';
+    return {
+        link,
+        data: {
+            name: feature.name,
+            type: 'feature',
+            system: {
+                description: feature.description,
+                featureForm: form,
+                actions: costs.length ? costAction({ name: feature.name, form, costs }) : {},
+                attribution
+            }
+        }
+    };
+}
+
+/** Kebab-case id for a homebrew domain, like the system's own domain creation ("String#slugify"). */
+export const domainSlug = label =>
+    label
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+
+function buildAncestry(entry, attribution) {
+    return {
+        documentName: 'Item',
+        data: { name: entry.name, type: 'ancestry', system: { description: entry.description, attribution } },
+        // The system shows the first two features as the primary and secondary ancestry features.
+        features: entry.features.map((f, i) => optionFeature(f, ['primary', 'secondary'][i] ?? null, attribution)),
+        linkFeatures: links => ({ 'system.features': links.map(l => ({ type: l.link, item: l.uuid })) })
+    };
+}
+
+function buildCommunity(entry, attribution) {
+    return {
+        documentName: 'Item',
+        data: { name: entry.name, type: 'community', system: { description: entry.description, attribution } },
+        features: entry.features.map(f => optionFeature(f, null, attribution)),
+        linkFeatures: links => ({ 'system.features': links.map(l => l.uuid) })
+    };
+}
+
+function buildClass(entry, attribution, resolveDomain) {
+    // Class items are free text in the PDF; the system expects Item UUIDs, so they go in the description.
+    const items = entry.classItems ? `<p><strong>Class Items:</strong> ${entry.classItems}</p>` : '';
+    const pad = list => [...list, '', '', ''].slice(0, Math.max(3, list.length));
+    return {
+        documentName: 'Item',
+        data: {
+            name: entry.name,
+            type: 'class',
+            system: {
+                description: entry.description + items,
+                domains: entry.domains.map(d => resolveDomain?.(d) ?? domainSlug(d)),
+                ...(Number.isFinite(entry.hitPoints) ? { hitPoints: entry.hitPoints } : {}),
+                ...(Number.isFinite(entry.evasion) ? { evasion: entry.evasion } : {}),
+                backgroundQuestions: pad(entry.backgroundQuestions),
+                connections: pad(entry.connections),
+                attribution
+            }
+        },
+        features: [
+            ...(entry.hopeFeature ? [optionFeature(entry.hopeFeature, 'hope', attribution)] : []),
+            ...entry.features.map(f => optionFeature(f, 'class', attribution))
+        ],
+        linkFeatures: links => ({ 'system.features': links.map(l => ({ type: l.link, item: l.uuid })) })
+    };
+}
+
+function buildSubclass(entry, attribution, resolveClass) {
+    return {
+        documentName: 'Item',
+        data: {
+            name: entry.name,
+            type: 'subclass',
+            system: {
+                description: entry.description,
+                spellcastingTrait: entry.spellcastingTrait,
+                linkedClass: resolveClass?.(entry.className) ?? null,
+                attribution
+            }
+        },
+        features: ['foundation', 'specialization', 'mastery'].flatMap(level =>
+            entry.features[level].map(f => optionFeature(f, level, attribution))
+        ),
+        linkFeatures: links => ({ 'system.features': links.map(l => ({ type: l.link, item: l.uuid })) })
+    };
+}
+
+function buildDomainCard(entry, attribution, resolveDomain) {
+    return {
+        documentName: 'Item',
+        data: {
+            name: entry.name,
+            type: 'domainCard',
+            system: {
+                description: entry.description,
+                domain: resolveDomain?.(entry.domain) ?? domainSlug(entry.domain),
+                level: entry.level,
+                recallCost: entry.recallCost,
+                type: entry.cardType,
+                attribution
+            },
+            // Card types of other games ("Anomaly", "Skill") map onto ability/spell; keep the original.
+            flags: { 'dh-pdf-importer': { cardType: entry.typeText } }
+        }
+    };
+}
+
 /**
  * Build document data for an entry.
  * @param {object} entry
@@ -263,10 +386,13 @@ function buildJournal(entry, attribution, resolveLink, pdfSrc) {
  * @param {(group: object) => string[]} [context.resolveAdversaries]  Potential adversary UUIDs
  * @param {(id: string) => string|null} [context.resolveLink]           Content link for an entry id
  * @param {(html: string) => string} [context.linkFeature]             Adds adversary links to feature text
+ * @param {(label: string) => string} [context.resolveDomain]          Domain id for a domain name
+ * @param {(name: string) => string|null} [context.resolveClass]       Class UUID for a subclass's class name
  * @param {string} [context.pdfSrc]                                     Path of the PDF for a journal in "pdf" or "both" mode
- * @returns {{documentName: string, data: object}}
+ * @returns {{documentName: string, data: object, features?: {link: string|null, data: object}[], linkFeatures?: Function}}
+ *   Options also return the feature Items to create first, and how to link them once they have UUIDs.
  */
-export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature, pdfSrc }) {
+export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature, pdfSrc, resolveDomain, resolveClass }) {
     const attr = attributionFor(attribution, entry.page);
     switch (entry.kind) {
         case 'adversary':
@@ -277,6 +403,16 @@ export function buildDocument(entry, { attribution, resolveAdversaries, resolveL
             return buildWeapon(entry, attr);
         case 'armor':
             return buildArmor(entry, attr);
+        case 'ancestry':
+            return buildAncestry(entry, attr);
+        case 'community':
+            return buildCommunity(entry, attr);
+        case 'class':
+            return buildClass(entry, attr, resolveDomain);
+        case 'subclass':
+            return buildSubclass(entry, attr, resolveClass);
+        case 'domainCard':
+            return buildDomainCard(entry, attr, resolveDomain);
         case 'journal':
             return buildJournal(entry, attr, resolveLink, pdfSrc);
     }

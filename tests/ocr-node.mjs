@@ -61,3 +61,49 @@ export function ocrRegionsNode(file, regions) {
         fs.rmSync(dir, { recursive: true, force: true });
     }
 }
+
+/**
+ * Recognise text inside images on pages that have a text layer (stat blocks pasted in as pictures).
+ * @param {string} file
+ * @param {{pages: object[]}} extracted
+ * @param {object} pdfjs
+ * @param {number[]} [only]   Restrict to these pages
+ * @returns {Promise<number>} Number of regions whose text was added
+ */
+export async function applyNodeImageOcr(file, extracted, pdfjs, only = null) {
+    const { findImageRegions, regionsToRecognise, isMeaningfulText, withoutDuplicates } = await import('../scripts/pdf/images.mjs');
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(fs.readFileSync(file)), verbosity: 0 }).promise;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dhpi-img-'));
+    const stat = fs.statSync(file);
+    let added = 0;
+    try {
+        for (const page of extracted.pages) {
+            if (only && !only.includes(page.number)) continue;
+            if (!page.items.some(i => i.str.trim() && !i.ocr)) continue;
+            const regions = regionsToRecognise(page, await findImageRegions(pdfjs, await doc.getPage(page.number)));
+            for (const r of regions) {
+                const px = v => String(Math.max(0, Math.round(v * SCALE)));
+                const key = `${path.basename(file).replace(/\W+/g, '_')}-${stat.size}-${stat.mtimeMs}-p${page.number}-${[r.x, r.y, r.w, r.h].map(Math.round).join('_')}.tsv`;
+                const cacheFile = path.join(CACHE, key);
+                let tsv;
+                if (fs.existsSync(cacheFile)) tsv = fs.readFileSync(cacheFile, 'utf8');
+                else {
+                    const prefix = path.join(dir, `r${added}`);
+                    execFileSync('pdftoppm', ['-r', String(72 * SCALE), '-f', String(page.number), '-l', String(page.number), '-x', px(r.x), '-y', px(r.y), '-W', px(r.w), '-H', px(r.h), '-png', '-singlefile', file, prefix], { stdio: 'ignore' });
+                    tsv = execFileSync('tesseract', [`${prefix}.png`, '-', 'tsv'], { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 << 20 }).toString();
+                    fs.mkdirSync(CACHE, { recursive: true });
+                    fs.writeFileSync(cacheFile, tsv);
+                }
+                const items = withoutDuplicates(page, ocrLinesToItems(parseTsv(tsv), SCALE).map(i => ({ ...i, x: i.x + r.x, y: i.y + r.y })));
+                if (!isMeaningfulText(items)) continue;
+                page.items.push(...items);
+                page.ocrRegions = [...(page.ocrRegions ?? []), r];
+                added++;
+            }
+        }
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+        await doc.destroy();
+    }
+    return added;
+}

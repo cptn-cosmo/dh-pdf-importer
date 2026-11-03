@@ -1,18 +1,27 @@
 import { extractPdf, loadFoundryPdfjs } from '../pdf/extract.mjs';
-import { ocrPages, ocrRegions } from '../pdf/ocr.mjs';
+import { ocrImageRegions, ocrPages, ocrRegions } from '../pdf/ocr.mjs';
 import { PRIVATE_USE, collectMissingGlyphs, recoverGlyphs } from '../pdf/glyphs.mjs';
 import { parseDocument } from '../parsers/index.mjs';
 import { attributionFor } from '../builders.mjs';
-import { FOLDER_MODES, documentNameFor, importEntries, uploadPdf } from '../importer.mjs';
+import { FOLDER_MODES, documentNameFor, domainsUsed, folderPath, importEntries, missingDomains, uploadPdf } from '../importer.mjs';
 import { SYSTEM_PACK, collectCandidates, linkText, matchGroup, normalize } from '../linker.mjs';
 import { MODULE_ID, allAttributionSources, getImportOptions, setImportOptions } from '../settings.mjs';
 
 const { HandlebarsApplicationMixin, ApplicationV2 } = foundry.applications.api;
 
-const KINDS = ['adversary', 'environment', 'weapon', 'armor', 'journal'];
+const KINDS = ['adversary', 'environment', 'weapon', 'armor', 'class', 'subclass', 'ancestry', 'community', 'domainCard', 'journal'];
 
 /** How the journal is imported: extracted text pages, the PDF itself, or both. */
 const JOURNAL_MODES = ['text', 'pdf', 'both'];
+
+/** A character option feature as shown on a preview card. */
+const optionFeature = (feature, label, formKey) => ({
+    name: feature.name,
+    form: label,
+    formKey,
+    description: feature.description,
+    costs: ''
+});
 
 const signed = value => (value == null ? '' : value >= 0 ? `+${value}` : `${value}`);
 
@@ -105,6 +114,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             back: PdfImporter.#onBack,
             runOcr: PdfImporter.#onRunOcr,
             recoverGlyphs: PdfImporter.#onRecoverGlyphs,
+            findImageText: PdfImporter.#onFindImageText,
             import: PdfImporter.#onImport
         }
     };
@@ -135,6 +145,9 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
         context.warnings = this.#documentWarnings();
         context.ocr = this.#ocrContext();
         context.glyphs = this.#glyphContext();
+        // Domains of The New Unknown and similar games are added to the system's homebrew domains on import.
+        const newDomains = missingDomains(domainsUsed(entries.filter(e => e.selected)));
+        context.newDomains = newDomains.length ? newDomains.join(', ') : '';
         context.total = entries.length;
         context.selectedCount = entries.filter(e => e.selected).length;
 
@@ -231,20 +244,20 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
 
     /** A sample folder path shown under the folder options. */
     #folderExample() {
-        const { mode, separateKinds } = this.folders;
+        const { mode } = this.folders;
         if (mode === 'none') return game.i18n.localize('DHPI.Folders.noFolders');
+        // The same path the importer will use, for the first entry that isn't the journal.
         const sample = this.result.entries.find(e => e.kind !== 'journal') ?? this.result.entries[0];
-        const parts = [this.attribution.source || game.i18n.localize('DHPI.DefaultFolder')];
-        if (sample && sample.kind !== 'journal') {
-            if (separateKinds) parts.push(game.i18n.localize(`DHPI.Kind.${sample.kind}.plural`));
-            if (mode === 'tier' || mode === 'tierType') parts.push(game.i18n.format('DHPI.TierLabel', { tier: sample.tier }));
-            if ((mode === 'type' || mode === 'tierType') && sample.kind !== 'armor') {
-                parts.push(sample.kind === 'weapon'
-                    ? game.i18n.localize(sample.secondary ? 'DHPI.SecondaryWeapon' : 'DHPI.PrimaryWeapon')
-                    : game.i18n.localize((sample.kind === 'adversary' ? CONFIG.DH.ACTOR.adversaryTypes : CONFIG.DH.ACTOR.environmentTypes)[sample.type]?.label ?? sample.type));
-            }
-        }
-        return parts.join(' › ');
+        const source = this.attribution.source || game.i18n.localize('DHPI.DefaultFolder');
+        return sample ? folderPath(sample, { ...this.folders, source }).join(' › ') : source;
+    }
+
+    /** Label of a domain: the system's name for a known domain, the name from the PDF otherwise. */
+    #domainLabel(name) {
+        const domain = Object.entries(CONFIG.DH.DOMAIN.allDomains()).find(
+            ([id, d]) => id === name.toLowerCase() || game.i18n.localize(d.label).toLowerCase() === name.toLowerCase()
+        );
+        return domain ? game.i18n.localize(domain[1].label) : name;
     }
 
     #iconFor(kind) {
@@ -253,6 +266,11 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             environment: 'fa-solid fa-mountain-sun',
             weapon: 'fa-solid fa-khanda',
             armor: 'fa-solid fa-shield-halved',
+            class: 'fa-solid fa-crown',
+            subclass: 'fa-solid fa-code-branch',
+            ancestry: 'fa-solid fa-dna',
+            community: 'fa-solid fa-people-group',
+            domainCard: 'fa-solid fa-diamond',
             journal: 'fa-solid fa-book-open'
         }[kind];
     }
@@ -269,7 +287,9 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             count: emptyPages.length,
             used: recognised.length > 0,
             onlyOcr: recognised.length > 0 && recognised.length === total,
-            recognised: formatPageRanges(recognised)
+            recognised: formatPageRanges(recognised),
+            // Pictures of text on pages that have a text layer can be searched once per PDF.
+            images: !this.imagesScanned && emptyPages.length < total
         };
     }
 
@@ -306,7 +326,8 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             searchText: `${entry.name} ${entry.kind} ${entry.type ?? ''}`.toLowerCase()
         };
         const rangeLabel = range => (range ? game.i18n.localize(`DAGGERHEART.CONFIG.Range.${range}.name`) : '');
-        const features = entry.features?.map(f => ({
+        // Stat block features; character options prepare their own below.
+        const features = (entry.kind === 'adversary' || entry.kind === 'environment' ? entry.features : null)?.map(f => ({
             name: f.name,
             form: game.i18n.localize(`DAGGERHEART.CONFIG.FeatureForm.${f.form}`),
             formKey: f.form,
@@ -378,6 +399,59 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
                         { label: game.i18n.localize('DHPI.ArmorScore'), value: entry.score }
                     ],
                     description: entry.description
+                };
+            case 'class':
+                return {
+                    ...base,
+                    subtitle: game.i18n.localize('TYPES.Item.class'),
+                    description: entry.description,
+                    stats: [
+                        { label: game.i18n.localize('DAGGERHEART.GENERAL.evasion'), value: Number.isFinite(entry.evasion) ? entry.evasion : '—' },
+                        { label: game.i18n.localize('DHPI.HP'), value: Number.isFinite(entry.hitPoints) ? entry.hitPoints : '—' }
+                    ],
+                    lines: [
+                        { label: game.i18n.localize('DHPI.Options.domains'), value: entry.domains.map(d => this.#domainLabel(d)).join(', ') || '—' },
+                        entry.classItems ? { label: game.i18n.localize('DHPI.Options.classItems'), value: entry.classItems } : null,
+                        {
+                            label: game.i18n.localize('DHPI.Options.questions'),
+                            value: game.i18n.format('DHPI.Options.questionCount', { questions: entry.backgroundQuestions.length, connections: entry.connections.length })
+                        }
+                    ].filter(Boolean),
+                    features: [
+                        ...(entry.hopeFeature ? [optionFeature(entry.hopeFeature, game.i18n.localize('DHPI.Options.hope'), 'reaction')] : []),
+                        ...entry.features.map(f => optionFeature(f, game.i18n.localize('DHPI.Options.classFeature'), 'passive'))
+                    ]
+                };
+            case 'subclass':
+                return {
+                    ...base,
+                    subtitle: game.i18n.format('DHPI.Options.subclassOf', { name: entry.className }),
+                    description: entry.description,
+                    lines: entry.traitText ? [{ label: game.i18n.localize('DHPI.Options.trait'), value: entry.traitText }] : [],
+                    features: [
+                        ...entry.features.foundation.map(f => optionFeature(f, game.i18n.localize('DHPI.Options.foundation'), 'passive')),
+                        ...entry.features.specialization.map(f => optionFeature(f, game.i18n.localize('DHPI.Options.specialization'), 'action')),
+                        ...entry.features.mastery.map(f => optionFeature(f, game.i18n.localize('DHPI.Options.mastery'), 'evolution'))
+                    ]
+                };
+            case 'ancestry':
+            case 'community':
+                return {
+                    ...base,
+                    subtitle: game.i18n.localize(`TYPES.Item.${entry.kind}`),
+                    description: entry.description,
+                    features: entry.features.map(f => optionFeature(f, null, 'passive'))
+                };
+            case 'domainCard':
+                return {
+                    ...base,
+                    subtitle: game.i18n.format('DHPI.Options.cardSubtitle', { level: entry.level, domain: this.#domainLabel(entry.domain), type: entry.typeText }),
+                    stats: [
+                        { label: game.i18n.localize('DHPI.Options.level'), value: entry.level },
+                        { label: game.i18n.localize('DHPI.Options.recallCost'), value: entry.recallCost },
+                        { label: game.i18n.localize('DHPI.Options.cardType'), value: game.i18n.localize(`DAGGERHEART.CONFIG.DomainCardTypes.${entry.cardType}`) }
+                    ],
+                    cardText: entry.description
                 };
             case 'journal':
                 return {
@@ -540,6 +614,7 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             // pdf.js takes ownership of the buffer it is given; keep a copy for OCR.
             this.buffer = buffer.slice(0);
             this.glyphsRecovered = 0;
+            this.imagesScanned = false;
             this.extracted = await extractPdf(pdfjs, buffer, {
                 onProgress: (value, total) => this.#setProgress(game.i18n.format('DHPI.Progress.page', { value, total }), value, total)
             });
@@ -670,6 +745,47 @@ export default class PdfImporter extends HandlebarsApplicationMixin(ApplicationV
             ui.notifications.info(game.i18n.format('DHPI.OCR.done', { pages: pages.length, found }));
         } catch (error) {
             console.error(`${MODULE_ID} | OCR failed`, error);
+            ui.notifications.error(game.i18n.format('DHPI.OCR.failed', { message: error.message }));
+        }
+        this.stage = 'review';
+        await this.render();
+    }
+
+    static async #onFindImageText() {
+        this.stage = 'loading';
+        this.progress = { label: game.i18n.localize('DHPI.Images.scanning'), value: 0, total: 1 };
+        await this.render();
+        try {
+            const pdfjs = await loadFoundryPdfjs();
+            const results = await ocrImageRegions(pdfjs, this.buffer, this.extracted.pages, {
+                onProgress: (stage, value, total) => {
+                    const label = {
+                        scan: game.i18n.format('DHPI.Images.scanPage', { value: value + 1, total }),
+                        loading: game.i18n.localize('DHPI.OCR.loading'),
+                        region: game.i18n.format('DHPI.Images.region', { value: Math.min(value + 1, total), total })
+                    }[stage];
+                    this.#setProgress(label, value, total);
+                }
+            });
+            for (const page of this.extracted.pages) {
+                const found = results.get(page.number);
+                if (!found) continue;
+                page.items.push(...found.items);
+                page.ocrRegions = [...(page.ocrRegions ?? []), ...found.regions];
+            }
+            this.imagesScanned = true;
+            const attribution = this.attribution;
+            await this.#parse();
+            this.attribution = attribution;
+            const regions = [...results.values()].reduce((n, r) => n + r.regions.length, 0);
+            const found = this.result.entries.filter(e => e.ocr).length;
+            ui.notifications.info(
+                regions
+                    ? game.i18n.format('DHPI.Images.done', { regions, pages: results.size, found })
+                    : game.i18n.localize('DHPI.Images.none')
+            );
+        } catch (error) {
+            console.error(`${MODULE_ID} | Image OCR failed`, error);
             ui.notifications.error(game.i18n.format('DHPI.OCR.failed', { message: error.message }));
         }
         this.stage = 'review';

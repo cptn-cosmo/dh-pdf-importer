@@ -2,13 +2,14 @@
 import fs from 'node:fs';
 import { loadNodePdfjs } from './pdfjs-node.mjs';
 import { extractPdf } from '../scripts/pdf/extract.mjs';
-import { applyNodeOcr } from './ocr-node.mjs';
+import { applyNodeImageOcr, applyNodeOcr } from './ocr-node.mjs';
 import { parseDocument } from '../scripts/parsers/index.mjs';
 
 const pdfjs = await loadNodePdfjs();
 const file = process.argv[2];
 const extracted = await extractPdf(pdfjs, new Uint8Array(fs.readFileSync(file)));
 if (process.argv.includes('--ocr')) applyNodeOcr(file, extracted);
+if (process.argv.includes('--images')) await applyNodeImageOcr(file, extracted, pdfjs);
 const result = parseDocument(extracted, { fileName: file.split('/').at(-1) });
 
 if (process.argv.includes('--json')) {
@@ -28,10 +29,18 @@ if (process.argv.includes('--json')) {
                   ? `T${e.tier} ${e.type} D${e.difficulty}\n     impulses: ${e.impulses}\n     desc: ${e.description}\n     adversaries: ${e.potentialAdversaries.map(a => a.group ? `${a.group}[${a.names.join('|')}]` : a.names[0]).join(', ')}`
                   : e.kind === 'journal'
                     ? `${e.pages.length} pages: ${e.pages.map(p => p.name).join(' / ')}`
+                    : e.kind === 'class'
+                    ? `domains [${e.domains.join(', ')}] evasion ${e.evasion} HP ${e.hitPoints} items "${e.classItems.slice(0, 50)}" hope "${e.hopeFeature?.name}" features [${e.features.map(f => f.name).join(', ')}] BQ ${e.backgroundQuestions.length} conn ${e.connections.length}`
+                    : e.kind === 'subclass'
+                    ? `of ${e.className} trait ${e.spellcastingTrait ?? '-'} ("${e.traitText}") F[${e.features.foundation.map(f => f.name).join(', ')}] S[${e.features.specialization.map(f => f.name).join(', ')}] M[${e.features.mastery.map(f => f.name).join(', ')}]`
+                    : e.kind === 'ancestry' || e.kind === 'community'
+                    ? `features [${e.features.map(f => f.name).join(', ')}]\n     desc: ${e.description.slice(0, 140)}`
+                    : e.kind === 'domainCard'
+                    ? `L${e.level} ${e.domain} ${e.typeText}->${e.cardType} recall ${e.recallCost} :: ${e.description.slice(0, 120)}`
                     : e.kind === "weapon" ? `${e.variantLabel} T${e.tier} ${e.secondary ? "secondary" : "primary"} ${e.trait} ${e.range} ${e.damage?.formula} ${e.damageType} ${e.burden} :: ${e.description}`
                     : `${e.variantLabel} T${e.tier} ${e.thresholds.major}/${e.thresholds.severe} score ${e.score} :: ${e.description}`;
         console.log(`[p${e.page ?? '-'}] ${e.kind.toUpperCase()} ${e.name}  ${stats}`);
-        for (const f of e.features ?? []) {
+        for (const f of Array.isArray(e.features) && e.kind !== 'class' && e.kind !== 'ancestry' && e.kind !== 'community' ? e.features : []) {
             console.log(`     * ${f.name} (${f.form})${f.costs.length ? ' cost ' + f.costs.map(c => c.value + ' ' + c.key).join('+') : ''}: ${f.description.slice(0, process.env.FULL ? 5000 : 140)}`);
         }
         for (const w of e.warnings ?? []) console.log('     ! ' + w);

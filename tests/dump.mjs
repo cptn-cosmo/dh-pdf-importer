@@ -2,15 +2,16 @@
 import fs from 'node:fs';
 import { loadNodePdfjs } from './pdfjs-node.mjs';
 import { extractPdf } from '../scripts/pdf/extract.mjs';
-import { applyNodeOcr } from './ocr-node.mjs';
+import { applyNodeImageOcr, applyNodeOcr } from './ocr-node.mjs';
 import { layoutDocument } from '../scripts/pdf/layout.mjs';
 
 const pdfjs = await loadNodePdfjs();
+const only = process.argv[3] && /^\d+$/.test(process.argv[3]) ? Number(process.argv[3]) : null;
 const extracted = await extractPdf(pdfjs, new Uint8Array(fs.readFileSync(process.argv[2])));
 if (process.argv.includes('--ocr')) applyNodeOcr(process.argv[2], extracted);
+if (process.argv.includes('--images')) await applyNodeImageOcr(process.argv[2], extracted, pdfjs, only ? [only] : null);
 const { pages } = extracted;
 const { lines, bodySize } = layoutDocument(pages);
-const only = process.argv[3] && /^\d+$/.test(process.argv[3]) ? Number(process.argv[3]) : null;
 console.log('body size', bodySize);
 let block = -1;
 for (const l of lines) {

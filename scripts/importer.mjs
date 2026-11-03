@@ -1,7 +1,7 @@
 /**
  * Creates documents from reviewed entries.
  */
-import { buildDocument } from './builders.mjs';
+import { buildDocument, domainSlug } from './builders.mjs';
 import { collectCandidates, linkText, matchGroup, normalize, resolveUuid } from './linker.mjs';
 import { MODULE_ID, getPdfFolder, registerAttributionSource } from './settings.mjs';
 
@@ -10,11 +10,19 @@ const DOCUMENT_FOR_KIND = {
     environment: 'Actor',
     weapon: 'Item',
     armor: 'Item',
+    ancestry: 'Item',
+    community: 'Item',
+    class: 'Item',
+    subclass: 'Item',
+    domainCard: 'Item',
     journal: 'JournalEntry'
 };
 
-/** Import order: adversaries first so environments can link them, the journal last so it can link everything. */
-const ORDER = ['adversary', 'weapon', 'armor', 'environment', 'journal'];
+/**
+ * Import order: adversaries first so environments can link them, classes before their subclasses, and
+ * the journal last so it can link everything.
+ */
+const ORDER = ['adversary', 'weapon', 'armor', 'ancestry', 'community', 'class', 'subclass', 'domainCard', 'environment', 'journal'];
 
 export const documentNameFor = kind => DOCUMENT_FOR_KIND[kind];
 
@@ -33,6 +41,10 @@ function typeFolderName(entry) {
         }
         case 'weapon':
             return game.i18n.localize(entry.secondary ? 'DHPI.SecondaryWeapon' : 'DHPI.PrimaryWeapon');
+        case 'subclass':
+            return entry.className;
+        case 'domainCard':
+            return entry.domain;
         default:
             return null;
     }
@@ -82,6 +94,84 @@ async function getFolderChain(documentName, pack, names, cache) {
         parent = folder;
     }
     return parent;
+}
+
+/* -------------------------------------------- */
+/*  Domains and classes                         */
+/* -------------------------------------------- */
+
+/** Domain names used by the entries (class domains and domain cards). */
+export function domainsUsed(entries) {
+    const names = new Map();
+    for (const e of entries) {
+        for (const d of e.kind === 'class' ? e.domains : e.kind === 'domainCard' ? [e.domain] : []) {
+            names.set(d.toLowerCase(), d);
+        }
+    }
+    return [...names.values()];
+}
+
+/** The system's domains (built in and homebrew), by lowercase id and label. */
+function knownDomains() {
+    const known = new Map();
+    for (const [id, domain] of Object.entries(CONFIG.DH.DOMAIN.allDomains())) {
+        known.set(id.toLowerCase(), id);
+        known.set(game.i18n.localize(domain.label).toLowerCase(), id);
+    }
+    return known;
+}
+
+/**
+ * Domains that are neither built into the system nor set up as homebrew domains.
+ * @param {string[]} names
+ */
+export function missingDomains(names) {
+    const known = knownDomains();
+    return names.filter(n => !known.has(n.toLowerCase()) && !known.has(domainSlug(n)));
+}
+
+/**
+ * Add domains to the system's homebrew settings, as its Homebrew menu does.
+ * @param {string[]} names
+ */
+async function createDomains(names) {
+    if (!names.length) return;
+    const key = CONFIG.DH.SETTINGS.gameSettings.Homebrew;
+    // Work on a copy like the system's Homebrew menu does; the system's onChange then refreshes its config.
+    const homebrew = game.settings.get(CONFIG.DH.id, key).toObject();
+    for (const label of names) {
+        const id = domainSlug(label);
+        homebrew.domains[id] = { id, label, src: 'icons/svg/portal.svg' };
+    }
+    await game.settings.set(CONFIG.DH.id, key, homebrew);
+}
+
+/** Map domain names to ids, after creating the missing ones. */
+async function domainResolver(entries) {
+    const names = domainsUsed(entries);
+    if (!names.length) return null;
+    await createDomains(missingDomains(names));
+    const known = knownDomains();
+    return label => known.get(label.toLowerCase()) ?? known.get(domainSlug(label)) ?? domainSlug(label);
+}
+
+/**
+ * Find classes by name for linking subclasses: classes of this import first, then the world, then compendiums.
+ * @param {Map<string, ClientDocument>} createdByName   Classes created in this import, by lowercase name
+ */
+async function classResolver(createdByName) {
+    const existing = new Map();
+    for (const item of game.items) if (item.type === 'class') existing.set(item.name.toLowerCase(), item.uuid);
+    for (const pack of game.packs.filter(p => p.documentName === 'Item')) {
+        try {
+            for (const entry of await pack.getIndex({ fields: ['type'] })) {
+                if (entry.type === 'class' && !existing.has(entry.name.toLowerCase())) existing.set(entry.name.toLowerCase(), entry.uuid);
+            }
+        } catch {
+            /* unreadable compendium */
+        }
+    }
+    return name => createdByName.get(name?.toLowerCase())?.uuid ?? existing.get(name?.toLowerCase()) ?? null;
 }
 
 /**
@@ -137,13 +227,18 @@ export async function importEntries(entries, { attribution, destinations, folder
     const folderCache = new Map();
     const source = attribution.source?.trim() || game.i18n.localize('DHPI.DefaultFolder');
     const index = sorted.some(e => e.kind === 'environment') ? await collectCandidates(sorted) : null;
+    const resolveDomain = await domainResolver(sorted);
+    const classesByName = new Map();
+    const resolveClass = sorted.some(e => e.kind === 'subclass') ? await classResolver(classesByName) : null;
 
     for (const [done, entry] of sorted.entries()) {
         try {
             const links = entry.kind === 'environment' ? environmentLinks(entry, index, createdById) : {};
-            const { documentName, data } = buildDocument(entry, {
+            const { documentName, data, features, linkFeatures } = buildDocument(entry, {
                 attribution,
                 pdfSrc,
+                resolveDomain,
+                resolveClass,
                 ...links,
                 resolveLink: id => {
                     const doc = createdById.get(id);
@@ -156,9 +251,29 @@ export async function importEntries(entries, { attribution, destinations, folder
             const path = folderPath(entry, { ...folderOptions, source });
             const folder = await getFolderChain(documentName, pack, path, folderCache);
             if (folder) data.folder = folder.id;
-            const doc = await CONFIG[documentName].documentClass.create(data, pack ? { pack } : {});
+            const cls = CONFIG[documentName].documentClass;
+
+            // Options link to their features by UUID, so the feature Items are created first.
+            let featureDocs = [];
+            if (features?.length) {
+                const featurePath = [...path, game.i18n.localize('DHPI.FeaturesFolder')].slice(-(CONST.FOLDER_MAX_DEPTH ?? 4));
+                const featureFolder = path.length ? await getFolderChain('Item', pack, featurePath, folderCache) : null;
+                const featureData = features.map(f => ({ ...f.data, ...(featureFolder ? { folder: featureFolder.id } : {}) }));
+                featureDocs = await cls.createDocuments(featureData, pack ? { pack } : {});
+                const linked = featureDocs.map((doc, i) => ({ link: features[i].link, uuid: doc.uuid }));
+                foundry.utils.mergeObject(data, foundry.utils.expandObject(linkFeatures(linked)));
+            }
+            let doc;
+            try {
+                doc = await cls.create(data, pack ? { pack } : {});
+            } catch (error) {
+                // Don't leave orphaned features behind.
+                if (featureDocs.length) await cls.deleteDocuments(featureDocs.map(d => d.id), pack ? { pack } : {});
+                throw error;
+            }
             created.push(doc);
             createdById.set(entry.id, doc);
+            if (entry.kind === 'class') classesByName.set(entry.name.toLowerCase(), doc);
         } catch (error) {
             console.error(`${MODULE_ID} | Failed to import ${entry.name}`, error);
             failed.push({ entry, error });

@@ -120,26 +120,37 @@ const BULLET = /^\s*(?:[•›▪■●◦\-*]|\d+\.)\s+/;
  * @returns {{html: string, text: string}}
  */
 export function renderParagraphs(entries, { secretQuestions = false } = {}) {
+    const spacing = lineSpacing(entries);
     const paragraphs = [];
     let current = null;
     let prev = null;
     for (const { runs, line } of entries) {
         if (!runs.length) continue;
         const text = runs.map(r => r.text).join('');
+        // A bullet glyph set apart from its text (in its own column) carries no content.
+        if (/^\s*[•·▪●◦]\s*$/.test(text)) continue;
         const bullet = BULLET.test(text);
         // A change of typeface after a finished sentence starts a new paragraph (e.g. GM questions).
-        const fontChanged = prev && prev.font !== line.font && /[.!?:”"]$/.test(prev.text.trim());
+        const fontChanged = prev && baseFont(prev.font) !== baseFont(line.font) && /[.!?:”"]$/.test(prev.text.trim());
+        // A bold label after a finished sentence starts a new paragraph: "… of you." / "Escalation: …"
+        const labelled = prev && runs[0]?.bold && /^\s*[^:]{1,30}:/.test(runs[0].text) && /[.!?”"]$/.test(prev.text.trim());
         // OCR text has no fonts and every recognised line can be its own layout block, so paragraphs
         // are told apart by extra vertical space instead.
-        const blockChanged = prev && (line.ocr ? ocrGap(prev, line) : prev.block !== line.block);
+        // A new layout block is a new paragraph, unless it simply continues at the usual line spacing
+        // (some PDFs put every line in its own text frame).
+        const blockChanged =
+            prev && (line.ocr ? ocrGap(prev, line, spacing) : prev.block !== line.block && !continuesBlock(prev, line, spacing));
         const heading = line.bold && !prev?.bold && text.length < 60;
-        if (!current || bullet || fontChanged || blockChanged || heading || (prev?.bold && !line.bold)) {
+        if (!current || bullet || fontChanged || labelled || blockChanged || heading || (prev?.bold && !line.bold)) {
             current = { runs: [], bullet, font: line.font };
             paragraphs.push(current);
         } else {
             // Join wrapped lines, keeping hyphenated words intact.
             const last = current.runs.at(-1);
-            if (last && !/[-–—/]$/.test(last.text)) last.text += ' ';
+            // A word broken at the line end is joined without its hyphen; a hyphen or slash right after a
+            // letter otherwise joins the parts as they are; a free-standing dash keeps its space.
+            if (last && prev?.softHyphen) last.text = last.text.replace(/-$/, '');
+            else if (last && !/\p{L}[-/]$/u.test(last.text)) last.text += ' ';
         }
         const copy = runs.map(r => ({ ...r }));
         if (bullet) copy[0].text = copy[0].text.replace(BULLET, '');
@@ -172,10 +183,36 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
 const isQuestion = text => text.endsWith('?') && !/[.!:]\s*$/.test(text);
 
 /** Is there more space between two OCR lines than ordinary line spacing? */
-function ocrGap(prev, line) {
+function ocrGap(prev, line, spacing) {
     if (prev.page !== line.page) return true;
     const gap = line.y - prev.y;
-    return gap < 0 || gap > Math.max(prev.size, line.size) * 1.9;
+    // Compared with the usual spacing of these lines when known: line spacing varies a lot between
+    // layouts, and OCR font sizes are only estimates.
+    return gap < 0 || gap > (spacing ? spacing * 1.45 : Math.max(prev.size, line.size) * 1.9);
+}
+
+/** A font name without its subset prefix: "MBIBOZ+Barlow-Regular" -> "Barlow-Regular". */
+const baseFont = font => (font ?? '').replace(/^[A-Z]{6}\+/, '');
+
+/** Does a line in another layout block continue the previous line as part of the same paragraph? */
+function continuesBlock(prev, line, spacing) {
+    // Changes of typeface are handled separately (see fontChanged), so only the position matters here.
+    if (!spacing || prev.page !== line.page) return false;
+    const gap = line.y - prev.y;
+    return gap > 0 && gap <= spacing * 1.25 && Math.abs(line.x - prev.x) < line.size * 2;
+}
+
+/** Typical distance between consecutive lines of a list of entries, or null. */
+function lineSpacing(entries) {
+    const gaps = [];
+    for (let i = 1; i < entries.length; i++) {
+        const a = entries[i - 1].line;
+        const b = entries[i].line;
+        if (!!a.ocr === !!b.ocr && a.page === b.page && b.y > a.y && b.y - a.y < Math.max(a.size, b.size) * 3) gaps.push(b.y - a.y);
+    }
+    if (!gaps.length) return null;
+    gaps.sort((x, y) => x - y);
+    return gaps[Math.floor(gaps.length / 2)];
 }
 
 /**
@@ -232,7 +269,9 @@ export function parseDamage(text) {
     return null;
 }
 
-export const damageTypeOf = text => (/^stress/i.test(text ?? '') ? 'stress' : /^mag/i.test(text ?? '') ? 'magical' : 'physical');
+// The New Unknown uses Kinetic ("kin") and Energy ("ene") damage, the counterparts of physical and magic.
+export const damageTypeOf = text =>
+    /^stress/i.test(text ?? '') ? 'stress' : /^(?:mag|ene)/i.test(text ?? '') ? 'magical' : 'physical';
 
 /**
  * Find a resource cost at the start of a feature ("Mark a Stress", "Spend 2 Fear").

@@ -227,11 +227,36 @@ export function layoutDocument(pages) {
             const key = repeatKey(line.text);
             const edge = line.y < page.height * 0.09 || line.y > page.height * 0.91;
             if (/^#$/.test(key) && edge) continue;
-            if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || counts.get(key) >= textPages * 0.9)) continue;
+            // Bare numbers repeat on every page as page numbers, but elsewhere they are content (a class's
+            // starting Hit Points), so they are only dropped at the edges.
+            const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && key !== '#';
+            if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || repeatedAnywhere)) continue;
             lines.push(line);
         }
     });
+    markSoftHyphens(lines);
     return { lines, bodySize, pageOffset };
+}
+
+/**
+ * Mark lines that end in a hyphen only because a word was broken at the line end ("Profici-" / "ency").
+ * The document decides: the hyphen is a line break when the joined word appears elsewhere unbroken and
+ * the hyphenated form doesn't, so real compounds like "well-maintained" keep theirs.
+ * @param {Line[]} lines
+ */
+function markSoftHyphens(lines) {
+    const words = new Set();
+    for (const line of lines) {
+        for (const word of line.text.toLowerCase().match(/[\p{L}]+(?:-[\p{L}]+)*/gu) ?? []) words.add(word);
+    }
+    for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i];
+        const left = line.text.match(/(\p{L}+)-$/u)?.[1];
+        const right = lines[i + 1].text.match(/^(\p{Ll}+)/u)?.[1];
+        if (!left || !right) continue;
+        const joined = `${left}${right}`.toLowerCase();
+        if (words.has(joined) && !words.has(`${left}-${right}`.toLowerCase())) line.softHyphen = true;
+    }
 }
 
 /**

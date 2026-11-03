@@ -28,8 +28,105 @@
 let pdfjsPromise = null;
 
 import { MISSING_GLYPH, PRIVATE_USE, applyKnownGlyphs, resolveGlyphs } from './glyphs.mjs';
+import { joinPhrases } from './ocr.mjs';
 
 export { MISSING_GLYPH };
+
+/** "HP" or "Stress" labels with neither a number nor tick-box characters after them. */
+function pipLabels(items) {
+    return items.filter(item => {
+        if (!/^\s*(?:HP|Stress)\s*:?\s*$/i.test(item.str)) return false;
+        const next = items
+            .filter(i => i !== item && i.str.trim() && Math.abs(i.y - item.y) < item.size * 0.4 && i.x >= item.x + item.w - 1)
+            .sort((a, b) => a.x - b.x)[0];
+        // A value directly after the label means there is nothing to count.
+        return !next || next.x - (item.x + item.w) > item.size * 0.3 || /^\s*\|/.test(next.str);
+    });
+}
+
+const needsDrawnPips = items => pipLabels(items).length > 0;
+
+/**
+ * Turn small round or square shapes drawn on the row of an HP/Stress label into "○" items, so that tick
+ * boxes drawn as vector graphics can be counted like printed ones.
+ * @returns {Promise<TextItem[]>}
+ */
+async function drawnPips(pdfjs, page, items) {
+    const labels = pipLabels(items);
+    const { OPS, Util } = pdfjs;
+    const [vx0, , , vy1] = page.view;
+    let ops;
+    try {
+        ops = await page.getOperatorList();
+    } catch {
+        return [];
+    }
+    const paint = new Set([OPS.fill, OPS.eoFill, OPS.stroke, OPS.fillStroke, OPS.eoFillStroke, OPS.closeStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    const shapes = [];
+    for (let i = 0; i < ops.fnArray.length; i++) {
+        const fn = ops.fnArray[i];
+        const args = ops.argsArray[i];
+        if (fn === OPS.save) stack.push(ctm);
+        else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+        else if (fn === OPS.transform) ctm = Util.transform(ctm, args);
+        else if (fn === OPS.constructPath && paint.has(ops.fnArray[i + 1])) {
+            const bounds = pathBounds(OPS, args);
+            if (!bounds) continue;
+            const [minX, maxX, minY, maxY] = bounds;
+            const corners = [[minX, minY], [maxX, maxY], [minX, maxY], [maxX, minY]].map(p => Util.applyTransform(p, ctm));
+            const xs = corners.map(c => c[0]);
+            const ys = corners.map(c => c[1]);
+            shapes.push({ x: Math.min(...xs) - vx0, top: vy1 - Math.max(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) });
+        }
+    }
+    const pips = [];
+    for (const label of labels) {
+        // The row ends at the next label or separator ("HP ○ ○ ○ | Stress ○ ○").
+        const stop = items
+            .filter(i => i !== label && i.str.trim() && Math.abs(i.y - label.y) < label.size * 0.4 && i.x > label.x + label.w)
+            .sort((a, b) => a.x - b.x)[0];
+        const limit = stop ? stop.x : label.x + label.size * 40;
+        for (const s of shapes) {
+            const size = Math.max(s.w, s.h);
+            const roundish = size > label.size * 0.4 && size < label.size * 1.6 && Math.abs(s.w - s.h) < size * 0.35;
+            const middle = s.top + s.h / 2;
+            const onRow = Math.abs(middle - (label.y - label.size * 0.35)) < label.size * 0.6;
+            if (roundish && onRow && s.x > label.x + label.w - 1 && s.x < limit) {
+                pips.push({ str: '○', x: s.x, y: label.y, w: s.w, size: label.size, font: '', bold: false, italic: false, drawn: true });
+            }
+        }
+    }
+    return pips;
+}
+
+/**
+ * Bounds of a constructPath operation as [minX, maxX, minY, maxY], from its own coordinates: the bounds
+ * pdf.js reports leave out curves, so circles come out with no size.
+ */
+function pathBounds(OPS, [subOps, coords]) {
+    const size = { [OPS.moveTo]: 2, [OPS.lineTo]: 2, [OPS.curveTo]: 6, [OPS.curveTo2]: 4, [OPS.curveTo3]: 4, [OPS.rectangle]: 4 };
+    const xs = [];
+    const ys = [];
+    let j = 0;
+    for (const op of subOps ?? []) {
+        const n = size[op] ?? 0;
+        const values = coords.slice(j, j + n);
+        j += n;
+        if (op === OPS.rectangle) {
+            const [x, y, w, h] = values;
+            xs.push(x, x + w);
+            ys.push(y, y + h);
+        } else {
+            for (let k = 0; k < values.length; k += 2) {
+                xs.push(values[k]);
+                ys.push(values[k + 1]);
+            }
+        }
+    }
+    return xs.length ? [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)] : null;
+}
 
 /**
  * Type 3 fonts often report a font size of around 1 because their glyphs are scaled by the font matrix.
@@ -131,6 +228,16 @@ export async function extractPdf(pdfjs, data, { onProgress } = {}) {
             });
         }
         fixTinySizes(items);
+        // Invisible text added by OCR tools (Tesseract's "GlyphLessFont", e.g. from OCRmyPDF) is OCR text:
+        // flag it, and join its separately placed words into phrases.
+        const layer = items.filter(i => /GlyphLessFont/i.test(i.font));
+        if (layer.length) {
+            const others = items.filter(i => !/GlyphLessFont/i.test(i.font));
+            items.length = 0;
+            items.push(...others, ...joinPhrases(layer.filter(i => i.str.trim())));
+        }
+        // HP and Stress may be printed as empty boxes drawn as shapes rather than characters.
+        if (needsDrawnPips(items)) items.push(...(await drawnPips(pdfjs, page, items)));
         // Fonts known to keep alternate digits in the private-use area are resolved right away.
         applyKnownGlyphs([{ items }]);
         pages.push({ number: n, width: x1 - x0, height: y1 - y0, items });

@@ -31,6 +31,16 @@
         <p class="dhpi-warning"><i class="fa-solid fa-triangle-exclamation" inert></i> {{this}}</p>
         {{/each}}
 
+        {{#if newDomains}}
+        <div class="dhpi-notice dhpi-notice-info">
+            <i class="fa-solid fa-diamond" inert></i>
+            <div>
+                <strong>{{localize "DHPI.Options.newDomainsTitle"}}</strong>
+                <p>{{localize "DHPI.Options.newDomainsHint" domains=newDomains}}</p>
+            </div>
+        </div>
+        {{/if}}
+
         {{#if ocr.used}}
         <div class="dhpi-notice dhpi-notice-info">
             <i class="fa-solid fa-circle-info" inert></i>
@@ -38,6 +48,17 @@
                 <strong>{{#if ocr.onlyOcr}}{{localize "DHPI.OCR.usedAllTitle"}}{{else}}{{localize "DHPI.OCR.usedTitle"}}{{/if}}</strong>
                 <p>{{localize "DHPI.OCR.usedHint" pages=ocr.recognised}}</p>
             </div>
+        </div>
+        {{/if}}
+
+        {{#if ocr.images}}
+        <div class="dhpi-notice dhpi-notice-images">
+            <i class="fa-solid fa-image" inert></i>
+            <div>
+                <strong>{{localize "DHPI.Images.offerTitle"}}</strong>
+                <p>{{localize "DHPI.Images.offerHint"}}</p>
+            </div>
+            <button type="button" data-action="findImageText"><i class="fa-solid fa-magnifying-glass" inert></i> {{localize "DHPI.Images.run"}}</button>
         </div>
         {{/if}}
 
@@ -167,6 +188,8 @@
 
                     {{#if attack}}<p class="dhpi-line"><strong>{{localize "DHPI.Attack"}}:</strong> {{attack}}</p>{{/if}}
                     {{#if experiences}}<p class="dhpi-line"><strong>{{localize "DHPI.Experience"}}:</strong> {{experiences}}</p>{{/if}}
+                    {{#each lines}}<p class="dhpi-line"><strong>{{label}}:</strong> {{value}}</p>{{/each}}
+                    {{#if cardText}}<div class="dhpi-card-text">{{{cardText}}}</div>{{/if}}
                     {{#if hordeDamage}}<p class="dhpi-line"><strong>{{localize "DHPI.HordeDamage"}}:</strong> {{hordeDamage}}</p>{{/if}}
                     {{#if adversaryGroups.length}}
                     <div class="dhpi-adversaries">
@@ -200,7 +223,7 @@
                         </summary>
                         {{#each features}}
                         <div class="dhpi-feature">
-                            <div class="dhpi-feature-title"><strong>{{name}}</strong> <span class="dhpi-tag form-{{formKey}}">{{form}}</span>{{#if costs}} <span class="dhpi-cost"><i class="fa-solid fa-coins" inert></i> {{costs}}</span>{{/if}}</div>
+                            <div class="dhpi-feature-title"><strong>{{name}}</strong>{{#if form}} <span class="dhpi-tag form-{{formKey}}">{{form}}</span>{{/if}}{{#if costs}} <span class="dhpi-cost"><i class="fa-solid fa-coins" inert></i> {{costs}}</span>{{/if}}</div>
                             <div class="dhpi-feature-text">{{{description}}}</div>
                         </div>
                         {{/each}}

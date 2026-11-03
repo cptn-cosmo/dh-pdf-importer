@@ -97,21 +97,30 @@ export function ocrLinesToItems(lines, scale) {
         }
     });
 
-    // Tesseract sometimes splits one printed line into several lines when the spacing is wide; rejoin
-    // pieces that share a baseline and nearly touch.
-    phrases.sort((a, b) => a.y - b.y || a.x - b.x);
+    return joinPhrases(phrases);
+}
+
+/**
+ * Join recognised words or phrases that share a baseline and nearly touch into single items. Tesseract
+ * sometimes splits one printed line into several when the spacing is wide, and OCR text layers (such as
+ * OCRmyPDF's) place every word separately, which would make word gaps look like column gutters.
+ * @param {{str: string, x: number, right?: number, w?: number, y: number, size: number}[]} phrases
+ * @returns {import('./extract.mjs').TextItem[]}
+ */
+export function joinPhrases(phrases) {
+    const sorted = phrases.map(p => ({ ...p, right: p.right ?? p.x + p.w })).sort((a, b) => a.y - b.y || a.x - b.x);
     const merged = [];
-    for (const phrase of phrases) {
+    for (const phrase of sorted) {
         const near = merged.find(
             m =>
                 Math.abs(m.y - phrase.y) < Math.min(m.size, phrase.size) * 0.4 &&
                 Math.abs(m.size - phrase.size) <= Math.max(m.size, phrase.size) * 0.2 &&
-                phrase.x >= m.right &&
+                phrase.x >= m.right - 0.5 &&
                 phrase.x - m.right < phrase.size * 2.5
         );
         if (near) {
             near.str += ` ${phrase.str}`;
-            near.right = phrase.right;
+            near.right = Math.max(near.right, phrase.right);
         } else merged.push({ ...phrase });
     }
     return merged.map(p => ({
@@ -243,4 +252,75 @@ export async function ocrRegions(pdfjs, data, regions, { onProgress } = {}) {
         await doc.destroy();
     }
     return texts;
+}
+
+/**
+ * Recognise text inside images on pages that have a text layer, such as stat blocks pasted in as
+ * pictures (browser only). Background images with text printed over them, small images and artwork
+ * without readable text are skipped (see images.mjs).
+ * @param {object} pdfjs
+ * @param {ArrayBuffer|Uint8Array} data
+ * @param {import('./extract.mjs').PageText[]} pages   Extracted pages, to know where text already is
+ * @param {object} [options]
+ * @param {(stage: 'loading'|'scan'|'region', done: number, total: number) => void} [options.onProgress]
+ * @returns {Promise<Map<number, {items: object[], regions: object[]}>>}  Recognised text by page
+ */
+export async function ocrImageRegions(pdfjs, data, pages, { onProgress } = {}) {
+    const { findImageRegions, isMeaningfulText, regionsToRecognise, withoutDuplicates } = await import('./images.mjs');
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(data).slice(), isEvalSupported: false, verbosity: 0 }).promise;
+    const results = new Map();
+    let worker = null;
+    try {
+        // Finding images needs each page's operator list, which is the slow part on image-heavy PDFs.
+        const candidates = [];
+        const withText = pages.filter(p => p.items.some(i => i.str.trim() && !i.ocr));
+        for (const [done, page] of withText.entries()) {
+            onProgress?.('scan', done, withText.length);
+            const regions = regionsToRecognise(page, await findImageRegions(pdfjs, await doc.getPage(page.number)));
+            if (regions.length) candidates.push({ number: page.number, regions });
+        }
+        const total = candidates.reduce((n, c) => n + c.regions.length, 0);
+        if (!total) return results;
+
+        onProgress?.('loading', 0, total);
+        const Tesseract = await loadTesseract();
+        worker = await Tesseract.createWorker('eng');
+        let done = 0;
+        for (const { number, regions } of candidates) {
+            const page = await doc.getPage(number);
+            const viewport = page.getViewport({ scale: RENDER_SCALE });
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            const context = canvas.getContext('2d', { willReadFrequently: true });
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({ canvasContext: context, viewport }).promise;
+            for (const region of regions) {
+                onProgress?.('region', done++, total);
+                const crop = document.createElement('canvas');
+                crop.width = Math.max(1, Math.round(region.w * RENDER_SCALE));
+                crop.height = Math.max(1, Math.round(region.h * RENDER_SCALE));
+                crop.getContext('2d').drawImage(canvas, Math.round(region.x * RENDER_SCALE), Math.round(region.y * RENDER_SCALE), crop.width, crop.height, 0, 0, crop.width, crop.height);
+                const { data: result } = await worker.recognize(crop, {}, { text: false, tsv: true });
+                const pageText = pages.find(p => p.number === number);
+                const items = withoutDuplicates(
+                    pageText,
+                    ocrLinesToItems(parseTsv(result.tsv ?? ''), RENDER_SCALE).map(i => ({ ...i, x: i.x + region.x, y: i.y + region.y }))
+                );
+                if (!isMeaningfulText(items)) continue;
+                const entry = results.get(number) ?? { items: [], regions: [] };
+                entry.items.push(...items);
+                entry.regions.push(region);
+                results.set(number, entry);
+            }
+            page.cleanup();
+            canvas.width = canvas.height = 0;
+        }
+        onProgress?.('region', total, total);
+    } finally {
+        await worker?.terminate();
+        await doc.destroy();
+    }
+    return results;
 }

@@ -30,7 +30,7 @@ const STAT_LINE = /^(?:D?ifficulty|Diff)\b\s*:?\s*(?:\d+|Special)/i;
 /** Tick boxes printed instead of numbers: "HP: O O O", "Stress: ☐ ☐". */
 const PIP = '[O○◯●◉□☐■▢⬜❍0o]';
 const RANGE = `(?:${RANGE_PATTERN})`;
-const DAMAGE = '[\\dd+\\-−–\\s]+?\\s*\\(?(?:phy\\w*|mag\\w*|stress)\\)?';
+const DAMAGE = '[\\dd+\\-−–\\s]+?\\s*\\(?(?:phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)\\)?';
 
 /**
  * Lines holding adversary statistics. They may be printed in a side column, so in reading order they
@@ -41,7 +41,7 @@ const ADVERSARY_STAT_LINES = [
     STAT_LINE,
     /^(?:Thresholds?|Th)\b\s*:?\s*(?:\d|None)/i,
     /^Major\b\s*:?\s*\d+/i,
-    new RegExp(`^(?:HP|Stress)\\s*:?\\s*(?:\\d|${PIP}(?:\\s+${PIP})*\\s*$)`, 'i'),
+    new RegExp(`^(?:HP|Stress)\\s*:?\\s*(?:\\d|${PIP}(?:\\s*${PIP})*\\s*(?:$|\\||(?:HP|Stress)\\b))`, 'i'),
     /^(?:ATK|Attack Modifier)\s*:?\s*[+\-−–]?\s*\d/i,
     /^(?:Experiences?|Exp)\b\s*:?\s*[^\n]*?[+\-−–]\s*\d/i,
     // Bite - Melee - 1d6+3 phy / Dagger: Melee - 1d8+5 phy
@@ -54,8 +54,9 @@ export const isAdversaryStatLine = text => ADVERSARY_STAT_LINES.some(re => re.te
 /** Replace tick boxes by their count: "HP: O O O" -> "HP: 3". */
 function countPips(text) {
     return text.replace(
-        new RegExp(`\\b(HP|Stress)\\s*:?\\s*((?:${PIP}\\s*){1,30})(?=$|\\||\\n)`, 'gi'),
-        (_m, label, pips) => `${label}: ${pips.replace(/\s/g, '').length}`
+        new RegExp(`\\b(HP|Stress)\\s*:?\\s*((?:${PIP}\\s*){1,30})(?=$|\\||\\n|(?:HP|Stress)\\b)`, 'gi'),
+        // Keep a separator: "HP ○○ Stress ○" -> "HP: 2 Stress: 1".
+        (_m, label, pips) => `${label}: ${pips.replace(/\s/g, '').length} `
     );
 }
 const FEATURES_HEADING = /^features?$/i;
@@ -76,13 +77,24 @@ export function matchFeatureStart(lines, index) {
     };
     const single = attempt(line.text, 1);
     if (single) return single;
-    const next = lines[index + 1];
-    // Only join when the header visibly wraps: "Somebody Has to Do Something About This! –" / "Action: ..."
-    const wraps = /[-–—]\s*$/.test(line.text) || /^(?:Passive|Action|Reaction|Evolution)\s*[:.]/.test(next?.text ?? '');
-    if (next && wraps && line.text.length < 80 && next.page === line.page) {
-        const joined = attempt(`${line.text} ${next.text}`, 2);
-        if (joined && joined.offset > line.text.length) {
-            joined.offset -= line.text.length + 1;
+    // Only join when the header visibly wraps onto the next line(s): it ends with the dash ("… This! –" /
+    // "Action: …"), the next line starts with the form, or a parenthesis is still open
+    // ("Metamorphosis (Phase" / "Change) -" / "Passive: …").
+    const wraps = (a, b) =>
+        /[-–—]\s*$/.test(a.text) ||
+        /^(?:Passive|Action|Reaction|Evolution)\s*[:.]/.test(b.text) ||
+        (a.text.split('(').length > a.text.split(')').length && /^[^(]*\)/.test(b.text));
+    let text = line.text;
+    for (let count = 2; count <= 3; count++) {
+        const previous = lines[index + count - 2];
+        const next = lines[index + count - 1];
+        if (!next || next.page !== line.page || previous.text.length >= 80 || !wraps(previous, next)) break;
+        const consumed = text.length + 1;
+        text = `${text} ${next.text}`;
+        const joined = attempt(text, count);
+        // The form keyword must be on the last joined line, so the header really spans these lines.
+        if (joined && joined.offset > consumed) {
+            joined.offset -= consumed;
             return joined;
         }
     }
@@ -150,7 +162,11 @@ function findName(lines, tierIndex, floor) {
         if (!larger && !caps) break;
         const below = parts[0] ?? tier;
         const aligned = line.x < tier.right && line.right > tier.x;
-        if (!aligned || below.y - line.y > Math.max(line.size, below.size) * 2.2) break;
+        // A heading never mixes recognised text with the PDF's own text (an image of a stat block next
+        // to commentary). OCR sizes are estimates, so allow a larger gap between OCR lines.
+        if (!!line.ocr !== !!below.ocr) break;
+        const maxGap = Math.max(line.size, below.size) * (line.ocr ? 3.2 : 2.2);
+        if (!aligned || below.y - line.y > maxGap) break;
         // A larger line above the name is a title for a multi-phase adversary ("YOUNG THORN DRAGON" / "Laughing Lasher").
         const title = parts.length && line.size > parts[0].size + 1;
         if (parts.length && !title && Math.abs(line.size - parts[0].size) > 1) break;
@@ -203,7 +219,12 @@ export function findStatBlocks(lines) {
             if (/^\S.{0,40}#\s?\d+\b/.test(line.text) && !matchFeatureStart(lines, i)) break;
             const heading = FEATURES_HEADING.test(line.text.trim());
             // OCR sizes are estimates from line boxes, so allow more variation.
-            const offSize = line => Math.abs(line.size - bodySize) > bodySize * (line.ocr ? 0.5 : 0.12);
+            // Larger text (headings, captions, prose) ends the block; slightly smaller text is often body
+            // text the author shrank to fit, so it may differ more.
+            const offSize = line => {
+                const tolerance = line.ocr ? 0.5 : line.size < bodySize ? 0.18 : 0.12;
+                return Math.abs(line.size - bodySize) > bodySize * tolerance;
+            };
             if (!heading && offSize(line) && !isAdversaryStatLine(line.text)) {
                 // Short decorative captions can sit between columns of a stat block; skip them when a
                 // feature of the same block follows on the same page.
@@ -278,18 +299,18 @@ function parseAttack(text) {
     const range = `(${RANGE_PATTERN})`;
     // ATK: +3 | Claws: Very Close | 1d12+2 phy
     let match = text.match(
-        new RegExp(`ATK\\s*:?\\s*([+\\-−–]?\\s*\\d+)\\s*\\|\\s*(.+?)\\s*:?\\s*${range}\\s*\\|\\s*([\\dd+\\-−\\s]+?)\\s*(phy\\w*|mag\\w*|stress)`, 'i')
+        new RegExp(`ATK\\s*:?\\s*([+\\-−–]?\\s*\\d+)\\s*\\|\\s*(.+?)\\s*:?\\s*${range}\\s*\\|\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
     );
     if (match) return { bonus: parseSigned(match[1]), name: cleanText(match[2]), range: toRange(match[3]), damage: parseDamage(match[4]), damageType: damageTypeOf(match[5]) };
     // Chipped Blade Melee +2, 1d8+2 phy
     match = text.match(
-        new RegExp(`(?:^|\\n)([^\\n]+?)\\s+${range}\\s*([+\\-−–]\\s*\\d+)\\s*,\\s*([\\dd+\\-−\\s]+?)\\s*(phy\\w*|mag\\w*|stress)`, 'i')
+        new RegExp(`(?:^|\\n)([^\\n]+?)\\s+${range}\\s*([+\\-−–]\\s*\\d+)\\s*,\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
     );
     if (match) return { bonus: parseSigned(match[3]), name: cleanText(match[1]), range: toRange(match[2]), damage: parseDamage(match[4]), damageType: damageTypeOf(match[5]) };
     // Bite - Melee - 1d6+3 phy  /  Dagger: Melee - 1d8+5 (phy), with the bonus on its own line ("ATK: +1",
     // "Attack Modifier: +1")
     match = text.match(
-        new RegExp(`(?:^|\\n)([^\\n:|]+?)\\s*[-:–]\\s*${range}\\s*[-–|]\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|stress)`, 'i')
+        new RegExp(`(?:^|\\n)([^\\n:|]+?)\\s*[-:–]\\s*${range}\\s*[-–|]\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
     );
     if (match) {
         const bonus = text.match(/(?:^|\n)(?:ATK|Attack Modifier)\s*:?\s*([+\-−–]?\s*\d+)/i);
