@@ -226,10 +226,16 @@ export function layoutDocument(pages) {
         for (const line of list) {
             const key = repeatKey(line.text);
             const edge = line.y < page.height * 0.09 || line.y > page.height * 0.91;
-            if (/^#$/.test(key) && edge) continue;
             // Bare numbers repeat on every page as page numbers, but elsewhere they are content (a class's
-            // starting Hit Points), so they are only dropped at the edges.
-            const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && key !== '#';
+            // starting Hit Points, a table cell near the bottom of the page). A page number is at the edge
+            // and alone on its row.
+            if (key === '#') {
+                const alone = !list.some(other => other !== line && Math.abs(other.y - line.y) < line.size * 0.6);
+                if (edge && alone) continue;
+                lines.push(line);
+                continue;
+            }
+            const repeatedAnywhere = counts.get(key) >= textPages * 0.9;
             if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || repeatedAnywhere)) continue;
             lines.push(line);
         }

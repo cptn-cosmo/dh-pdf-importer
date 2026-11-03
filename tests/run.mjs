@@ -36,6 +36,9 @@ const EXPECTED = {
     // Text layer for most pages, but the adversary stat blocks are pictures: nothing without image OCR
     // Character options in the SRD layout; The New Unknown's own domains and card types
     '@SRC/PlaytestV03_Fist.pdf': { adversary: 0, journal: 1, class: 4, subclass: 5, ancestry: 7, community: 3, domainCard: 35 },
+    // An adventure preview: no stat blocks, but a quick-stats table of core adversaries for the journal
+    '@SRC/Daggerheart_Core_Book_-_Full_Art_Cards_-_9-09-25.pdf': { adversary: 0, journal: 1, tables: 1 },
+    'adventures/Death_at_Helfast_Spire_v1_0.pdf::tables': { tables: 2 },
     // A scan with an invisible OCR text layer (OCRmyPDF): read as OCR text
     '@SRC/Hollow_Rider_Dh1e.pdf': { adversary: 1, attacks: 1, withHp: 1, ocrEntries: 1, journal: 1 },
     // HP and Stress are printed as circles drawn as vector shapes
@@ -76,6 +79,7 @@ for (const [file, { ocr, recover, images, ...expected }] of Object.entries(EXPEC
         if (e.kind === 'adversary' && e.stress) actual.withStress = (actual.withStress ?? 0) + 1;
         if (e.secondary) actual.secondary = (actual.secondary ?? 0) + 1;
         if (e.ocr && e.kind !== 'journal') actual.ocrEntries = (actual.ocrEntries ?? 0) + 1;
+        if (e.kind === 'journal') actual.tables = e.pages.reduce((n, p) => n + (p.html.match(/<table>/g) ?? []).length, 0);
         if (e.warnings?.some(w => w.includes('[?]'))) actual.missingGlyphs = (actual.missingGlyphs ?? 0) + 1;
         buildDocument(e, { attribution: result.attribution });
     }

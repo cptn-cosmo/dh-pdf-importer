@@ -2,7 +2,7 @@
  * Creates documents from reviewed entries.
  */
 import { buildDocument, domainSlug } from './builders.mjs';
-import { collectCandidates, linkText, matchGroup, normalize, resolveUuid } from './linker.mjs';
+import { collectCandidates, linkJournal, linkText, matchGroup, normalize, resolveUuid } from './linker.mjs';
 import { MODULE_ID, getPdfFolder, registerAttributionSource } from './settings.mjs';
 
 const DOCUMENT_FOR_KIND = {
@@ -226,14 +226,25 @@ export async function importEntries(entries, { attribution, destinations, folder
     const failed = [];
     const folderCache = new Map();
     const source = attribution.source?.trim() || game.i18n.localize('DHPI.DefaultFolder');
-    const index = sorted.some(e => e.kind === 'environment') ? await collectCandidates(sorted) : null;
+    const index = sorted.some(e => e.kind === 'environment' || e.kind === 'journal') ? await collectCandidates(sorted) : null;
     const resolveDomain = await domainResolver(sorted);
     const classesByName = new Map();
     const resolveClass = sorted.some(e => e.kind === 'subclass') ? await classResolver(classesByName) : null;
 
     for (const [done, entry] of sorted.entries()) {
         try {
-            const links = entry.kind === 'environment' ? environmentLinks(entry, index, createdById) : {};
+            const links =
+                entry.kind === 'environment'
+                    ? environmentLinks(entry, index, createdById)
+                    : entry.kind === 'journal'
+                      ? {
+                            linkAdversaries: html =>
+                                linkJournal(html, index, (candidates, text) => {
+                                    const uuid = resolveUuid(candidates, createdById);
+                                    return uuid ? `@UUID[${uuid}]{${text}}` : null;
+                                })
+                        }
+                      : {};
             const { documentName, data, features, linkFeatures } = buildDocument(entry, {
                 attribution,
                 pdfSrc,

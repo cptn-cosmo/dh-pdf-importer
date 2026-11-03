@@ -27,7 +27,7 @@ Every imported document gets `system.attribution` (source, printed page and arti
 | Classes & subclasses | The SRD class layout: domains, starting Evasion and Hit Points, class items, Hope feature, class features, background questions and connections, then each subclass with its spellcast trait (or "power trait") and foundation, specialization and mastery features. Subclasses are linked to their class. |
 | Ancestries & communities | Entries under an "Ancestry"/"Community" heading, with their description and "Name: text" features. |
 | Domain cards | The SRD reference format ("Level 1 Arcana Spell", "Recall Cost: 1"). Card types of other games such as The New Unknown (Skill, Tech, Psionic, Anomaly, Engram, Sigil) map onto ability or spell, and the original type is kept in the card's flags. |
-| Journal | The rest of the text, as one journal entry with a page per major heading. Text that was imported as a stat block or table is replaced with a link to the new document. |
+| Journal | The rest of the text, as one journal entry with a page per major heading. Text that was imported as a stat block or table is replaced with a link to the new document. Other tables (quick-stat tables, loot lists, tables of contents) are kept as tables. Adversary names are linked to the adversaries of this import, the world or compendiums: in the first column of tables, also when abbreviated ("App. Assassin" → Apprentice Assassin), and multi-word names in the text. |
 
 ### Scanned PDFs (OCR)
 

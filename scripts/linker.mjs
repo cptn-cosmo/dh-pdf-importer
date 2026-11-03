@@ -190,6 +190,40 @@ export function linkText(html, index, { allowed = new Set(), link }) {
     return parts.join('');
 }
 
+/**
+ * Match an abbreviated name from a reference table: "App. Assassin" -> Apprentice Assassin,
+ * "Archer Squad." -> Archer Squadron. Words ending in a full stop are prefixes; the match must be unique.
+ * @returns {Candidate[]|null}
+ */
+export function matchAbbreviation(index, name) {
+    const words = name.trim().split(/\s+/);
+    if (!words.some(w => /\p{L}{2,}\.$/u.test(w))) return null;
+    const escape = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+        `^${words.map(w => (/\.$/.test(w) ? `${escape(w.slice(0, -1))}\\p{L}*` : escape(w))).join('\\s+')}$`,
+        'iu'
+    );
+    const hits = new Map();
+    for (const c of index.candidates) if (pattern.test(c.name)) hits.set(normalize(c.name), [...(hits.get(normalize(c.name)) ?? []), c]);
+    return hits.size === 1 ? [...hits.values()][0].sort((a, b) => a.priority - b.priority) : null;
+}
+
+/**
+ * Link adversary names in a journal page: names in the first column of tables (also abbreviated) and
+ * multi-word names in the text.
+ * @param {string} html
+ * @param {object} index
+ * @param {(candidates: Candidate[], text: string) => string|null} link
+ */
+export function linkJournal(html, index, link) {
+    const linked = html.replace(/<tr><td>([^<]+)<\/td>/g, (match, text) => {
+        const candidates = matchName(index, text)[0] ?? matchAbbreviation(index, text);
+        const replacement = candidates && link(candidates, text);
+        return replacement ? `<tr><td>${replacement}</td>` : match;
+    });
+    return linkText(linked, index, { link });
+}
+
 /* -------------------------------------------- */
 /*  Foundry                                     */
 /* -------------------------------------------- */

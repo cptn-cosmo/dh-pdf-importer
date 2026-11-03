@@ -225,7 +225,7 @@ function buildArmor(entry, attribution) {
     };
 }
 
-function buildJournal(entry, attribution, resolveLink, pdfSrc) {
+function buildJournal(entry, attribution, resolveLink, pdfSrc, linkAdversaries) {
     const mode = entry.mode ?? 'text';
     const textPages = mode === 'pdf' ? [] : entry.pages;
     const pages = textPages.map((page, index) => ({
@@ -234,7 +234,7 @@ function buildJournal(entry, attribution, resolveLink, pdfSrc) {
         sort: (index + 1) * 100000,
         text: {
             format: 1,
-            content: page.html.replace(/<p data-dhpi-link="([^"]+)"><\/p>/g, (_m, id) => {
+            content: (linkAdversaries ? linkAdversaries(page.html) : page.html).replace(/<p data-dhpi-link="([^"]+)"><\/p>/g, (_m, id) => {
                 const link = resolveLink?.(id);
                 return link ? `<p>${link}</p>` : '';
             })
@@ -386,13 +386,14 @@ function buildDomainCard(entry, attribution, resolveDomain) {
  * @param {(group: object) => string[]} [context.resolveAdversaries]  Potential adversary UUIDs
  * @param {(id: string) => string|null} [context.resolveLink]           Content link for an entry id
  * @param {(html: string) => string} [context.linkFeature]             Adds adversary links to feature text
+ * @param {(html: string) => string} [context.linkAdversaries]         Adds adversary links to journal pages
  * @param {(label: string) => string} [context.resolveDomain]          Domain id for a domain name
  * @param {(name: string) => string|null} [context.resolveClass]       Class UUID for a subclass's class name
  * @param {string} [context.pdfSrc]                                     Path of the PDF for a journal in "pdf" or "both" mode
  * @returns {{documentName: string, data: object, features?: {link: string|null, data: object}[], linkFeatures?: Function}}
  *   Options also return the feature Items to create first, and how to link them once they have UUIDs.
  */
-export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature, pdfSrc, resolveDomain, resolveClass }) {
+export function buildDocument(entry, { attribution, resolveAdversaries, resolveLink, linkFeature, linkAdversaries, pdfSrc, resolveDomain, resolveClass }) {
     const attr = attributionFor(attribution, entry.page);
     switch (entry.kind) {
         case 'adversary':
@@ -414,7 +415,7 @@ export function buildDocument(entry, { attribution, resolveAdversaries, resolveL
         case 'domainCard':
             return buildDomainCard(entry, attr, resolveDomain);
         case 'journal':
-            return buildJournal(entry, attr, resolveLink, pdfSrc);
+            return buildJournal(entry, attr, resolveLink, pdfSrc, linkAdversaries);
     }
     throw new Error(`Unknown entry kind ${entry.kind}`);
 }
