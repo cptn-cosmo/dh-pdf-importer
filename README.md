@@ -2,6 +2,16 @@
 
 A Foundry VTT v14 module for the [Daggerheart system](https://github.com/Foundryborne/daggerheart) that reads a PDF supplement, shows everything it recognises in a preview, and imports the entries you pick.
 
+## Installation
+
+In Foundry's **Add-on Modules → Install Module** dialog, paste this manifest URL and click **Install**:
+
+```
+https://github.com/cptn-cosmo/dh-pdf-importer/releases/latest/download/module.json
+```
+
+Releases are listed on the [GitHub releases page](https://github.com/cptn-cosmo/dh-pdf-importer/releases). Please report problems on the [issue tracker](https://github.com/cptn-cosmo/dh-pdf-importer/issues).
+
 ## Usage
 
 As a GM, click **Import PDF** at the top of the Actors, Items, Journal or Compendium sidebar (or use *Configure Settings → Daggerheart PDF Importer*). Then drop a PDF onto the window, choose one from your computer, or browse the Foundry data folder.
@@ -65,3 +75,7 @@ node tests/glyphs.mjs file.pdf       # recover glyphs without a text mapping and
 node tests/linker.mjs env.pdf [adversaries.pdf…]  # how many potential adversaries match the system compendium
 node tests/preview.mjs file.pdf out.html  # render the review screen with stubbed Foundry globals
 ```
+
+### Releasing
+
+Bump `version` and the `download` URL in `module.json`, commit, tag `vX.Y.Z`, then attach `module.json` and a `dh-pdf-importer.zip` of the module files (`module.json`, `README.md`, `lang`, `scripts`, `styles`, `templates`) to a GitHub release for that tag. The manifest URL always points at the latest release's `module.json`.
