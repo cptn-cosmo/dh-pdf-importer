@@ -78,4 +78,8 @@ node tests/preview.mjs file.pdf out.html  # render the review screen with stubbe
 
 ### Releasing
 
-Bump `version` and the `download` URL in `module.json`, commit, tag `vX.Y.Z`, then attach `module.json` and a `dh-pdf-importer.zip` of the module files (`module.json`, `README.md`, `lang`, `scripts`, `styles`, `templates`) to a GitHub release for that tag. The manifest URL always points at the latest release's `module.json`.
+Bump `version` and the `download` URL in `module.json`, commit, tag `vX.Y.Z`, then attach `module.json` and a `dh-pdf-importer.zip` of the module files (`module.json`, `README.md`, `LICENSE`, `lang`, `scripts`, `styles`, `templates`) to a GitHub release for that tag. The manifest URL always points at the latest release's `module.json`.
+
+## License
+
+[MIT](LICENSE)
