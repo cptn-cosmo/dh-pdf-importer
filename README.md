@@ -16,12 +16,16 @@ Releases are listed on the [GitHub releases page](https://github.com/cptn-cosmo/
 
 As a GM, click **Import PDF** at the top of the Actors, Items, Journal or Compendium sidebar (or use *Configure Settings → Daggerheart PDF Importer*). Then drop a PDF onto the window, choose one from your computer, or browse the Foundry data folder.
 
+![The import window, waiting for a PDF](docs/screenshots/import-dialog.png)
+
 The review screen shows a card for each entry, grouped by type. You can:
 
 - import everything (the default) or untick the entries you don't want. You can also select or deselect a whole group, or everything shown under the current filter or search
 - rename entries, or mark a weapon as secondary, before importing
 - edit the **attribution**: source, artist and page offset. These are guessed from the PDF's metadata, file name, credits and printed page numbers
 - choose where each document type goes: a world folder named after the source, or any unlocked compendium
+
+![The review screen, showing adversaries found in a PDF](docs/screenshots/review.png)
 
 Character options are set up the way the system's own compendiums are: their features are separate feature Items in a "Features" folder next to them, linked by UUID (primary/secondary for ancestries, Hope/class features for classes, foundation/specialization/mastery for subclasses). Domains that the system doesn't have yet (such as The New Unknown's Mars or Nibiru) are added to its homebrew domains when you import, and the preview lists them first.
 
