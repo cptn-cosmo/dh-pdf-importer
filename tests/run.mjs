@@ -43,6 +43,9 @@ const EXPECTED = {
     '@SRC/Hollow_Rider_Dh1e.pdf': { adversary: 1, attacks: 1, withHp: 1, ocrEntries: 1, journal: 1 },
     // HP and Stress are printed as circles drawn as vector shapes
     '@SRC/Spa Day - Cavern Crawl - Tier 2.pdf': { adversary: 3, environment: 1, journal: 1, withHp: 3, withStress: 3 },
+    // HP/Stress tick boxes printed in a larger font between the stats and the features, and the horde size
+    // in the name heading ("SCRAWNY GNOLLS (1/HP)")
+    '@SRC/EE_HeartbeatGnolls_StatBlocksOnly_v1.pdf': { adversary: 16, environment: 3, journal: 1, attacks: 16, withFeatures: 16, hordeDamage: 1 },
     '@SRC/PlaytestV03_Fist.pdf::images': { images: true, adversary: 8, attacks: 8, ocrEntries: 8 }
 };
 
@@ -77,6 +80,8 @@ for (const [file, { ocr, recover, images, ...expected }] of Object.entries(EXPEC
         if (e.attack) actual.attacks = (actual.attacks ?? 0) + 1;
         if (e.kind === 'adversary' && e.hp) actual.withHp = (actual.withHp ?? 0) + 1;
         if (e.kind === 'adversary' && e.stress) actual.withStress = (actual.withStress ?? 0) + 1;
+        if (e.kind === 'adversary' && e.features.length) actual.withFeatures = (actual.withFeatures ?? 0) + 1;
+        if (e.hordeDamage) actual.hordeDamage = (actual.hordeDamage ?? 0) + 1;
         if (e.secondary) actual.secondary = (actual.secondary ?? 0) + 1;
         if (e.ocr && e.kind !== 'journal') actual.ocrEntries = (actual.ocrEntries ?? 0) + 1;
         if (e.kind === 'journal') actual.tables = e.pages.reduce((n, p) => n + (p.html.match(/<table>/g) ?? []).length, 0);

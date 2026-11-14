@@ -62,6 +62,14 @@ function countPips(text) {
 const FEATURES_HEADING = /^features?$/i;
 
 /**
+ * Tick-box trackers printed beside the stats, split into bare labels and rows of boxes that are often
+ * set in a larger font: "□ □ □ □" / "HP:" / "Stress:" / "□ □ □". The numbers are on the stat line, so
+ * these lines carry nothing to parse. Only drawn box characters count here, not O or 0.
+ */
+const TRACKER_LINE = /^(?:(?:HP|Stress)\s*:?|[○◯●◉□☐■▢⬜❍](?:\s*[○◯●◉□☐■▢⬜❍])*)$/i;
+const isTrackerLine = text => TRACKER_LINE.test(cleanText(text));
+
+/**
  * Is a line the start of a feature? Feature names may wrap onto a second line.
  * @returns {{name: string, form: string, lines: number, offset: number}|null}
  */
@@ -225,7 +233,7 @@ export function findStatBlocks(lines) {
                 const tolerance = line.ocr ? 0.5 : line.size < bodySize ? 0.18 : 0.12;
                 return Math.abs(line.size - bodySize) > bodySize * tolerance;
             };
-            if (!heading && offSize(line) && !isAdversaryStatLine(line.text)) {
+            if (!heading && offSize(line) && !isAdversaryStatLine(line.text) && !isTrackerLine(line.text)) {
                 // Short decorative captions can sit between columns of a stat block; skip them when a
                 // feature of the same block follows on the same page.
                 let next = i;
@@ -240,12 +248,20 @@ export function findStatBlocks(lines) {
             if (line.page !== prev.page && !matchFeatureStart(lines, i)) break;
             body.push(line);
         }
+        // The horde size can be part of the name heading: "SCRAWNY GNOLLS (1/HP)" / "Tier 2 Horde".
+        let name = joinName(nameLines);
+        let hordeHP = anchor.match[3] ? Number(anchor.match[3]) : null;
+        const hordeSuffix = name.match(/\s*\(\s*(\d+)\s*\/\s*HP\s*\)\s*$/i);
+        if (hordeSuffix) {
+            name = name.slice(0, hordeSuffix.index);
+            hordeHP ??= Number(hordeSuffix[1]);
+        }
         blocks.push({
-            name: joinName(nameLines),
+            name,
             page: lines[anchor.index].page,
             tier: Number(anchor.match[1]),
             typeText: anchor.match[2],
-            hordeHP: anchor.match[3] ? Number(anchor.match[3]) : null,
+            hordeHP,
             body,
             sourceLines: [...nameLines, lines[anchor.index], ...body]
         });
@@ -356,7 +372,7 @@ export function parseAdversary(block) {
             .join('\n')
     );
     // Everything else after the stats is notes ("Note: ...") followed by the features.
-    const rest = lines.slice(firstStat).filter(l => !isStat(l));
+    const rest = lines.slice(firstStat).filter(l => !isStat(l) && !isTrackerLine(l.text));
 
     const hp = statText.match(/\bHP\b\s*:?\s*(\d+)/i);
     const stress = statText.match(/\bStress\b\s*:?\s*(\d+)/i);
