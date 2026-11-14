@@ -1,0 +1,75 @@
+# Publishes a release when a version tag is pushed:
+#   git tag -a v1.2.3 -m "Title" -m "- change one" -m "- change two" && git push origin v1.2.3
+# The tag's message (after the first line) becomes the release notes. module.json's version must match
+# the tag. The zip and the version-specific manifest are attached to a GitHub release, and the version is
+# registered with the Foundry package admin (needs the FOUNDRY_PACKAGE_RELEASE_TOKEN repository secret).
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        run: |
+          VERSION="${TAG#v}"
+          MANIFEST_VERSION=$(jq -r .version module.json)
+          if [ "$VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG does not match module.json version $MANIFEST_VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Build the package
+        run: |
+          # The released manifest always points at this release's zip.
+          jq --arg url "https://github.com/$REPO/releases/download/$TAG/dh-pdf-importer.zip" \
+            '.download = $url' module.json > module.tmp && mv module.tmp module.json
+          zip -r dh-pdf-importer.zip module.json LICENSE README.md lang scripts styles templates
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # actions/checkout leaves the tag without its annotation; fetch it to read the message.
+          git fetch --force origin "+refs/tags/$TAG:refs/tags/$TAG"
+          git tag -l --format='%(contents:body)' "$TAG" > notes.md
+          printf '\nInstall in Foundry with the manifest URL:\n`https://github.com/%s/releases/latest/download/module.json`\n' "$REPO" >> notes.md
+          gh release create "$TAG" dh-pdf-importer.zip module.json --title "$TAG" --notes-file notes.md --verify-tag
+
+      - name: Publish to the Foundry package admin
+        env:
+          FOUNDRY_TOKEN: ${{ secrets.FOUNDRY_PACKAGE_RELEASE_TOKEN }}
+        run: |
+          if [ -z "$FOUNDRY_TOKEN" ]; then
+            echo "::warning::FOUNDRY_PACKAGE_RELEASE_TOKEN is not set; skipping the Foundry release"
+            exit 0
+          fi
+          body=$(jq -n \
+            --arg id "$(jq -r .id module.json)" \
+            --arg version "$VERSION" \
+            --arg manifest "https://github.com/$REPO/releases/download/$TAG/module.json" \
+            --arg notes "https://github.com/$REPO/releases/tag/$TAG" \
+            --argjson compatibility "$(jq .compatibility module.json)" \
+            '{id: $id, release: {version: $version, manifest: $manifest, notes: $notes, compatibility: $compatibility}}')
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST \
+            https://foundryvtt.com/_api/packages/release_version/ \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: $FOUNDRY_TOKEN" \
+            -d "$body")
+          cat response.json; echo
+          if [ "$status" != 200 ]; then
+            echo "::error::Foundry release failed with HTTP $status"
+            exit 1
+          fi
