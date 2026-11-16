@@ -22,7 +22,8 @@ import {
 } from './common.mjs';
 import { MISSING_GLYPH } from '../pdf/extract.mjs';
 
-const TIER_LINE = /^Tier\s*([1-4])\s*([A-Za-z][A-Za-z/ ]*?)\s*(?:\(\s*(\d+)\s*\/\s*HP\s*\))?\s*$/i;
+// The type may be followed by the horde size, "(2/HP)", or a tag of the setting: "(Umbra-Touched)".
+const TIER_LINE = /^Tier\s*([1-4])\s*([A-Za-z][A-Za-z/ ]*?)\s*(?:\(\s*(\d+)\s*\/\s*HP\s*\)|\(\s*(\p{L}[\p{L}\s'’-]{0,30}?)\s*\))?\s*$/iu;
 const FEATURE_START =
     /^(?<name>[A-Z0-9“"'‘(][^:]{0,80}?)\s*[-–—:]\s*(?<form>Passive|Action|Reaction|Evolution)\s*[:.]\s*/;
 const STAT_LINE = /^(?:D?ifficulty|Diff)\b\s*:?\s*(?:\d+|Special)/i;
@@ -136,7 +137,9 @@ export function parseFeatures(lines, { secretQuestions = false } = {}) {
         preamble: renderParagraphs(preamble),
         features: features.map(f => {
             const { html, text } = renderParagraphs(f.entries, { secretQuestions });
-            return { name: f.name, form: f.form, description: html, text, costs: parseCosts(text) };
+            // Adversaries and environments have no Hope: "they can spend a Hope" is paid by a PC.
+            const costs = parseCosts(text).filter(c => c.key !== 'hope');
+            return { name: f.name, form: f.form, description: html, text, costs };
         })
     };
 }
@@ -355,11 +358,31 @@ function thresholds(text) {
 }
 
 /**
+ * A narrow stat column can push the damage type of the standard attack onto its own line:
+ * "Curved Blade: Very Close - 1d10+3" / "phy". Join it back.
+ * @param {import('../pdf/layout.mjs').Line[]} lines
+ */
+function joinWrappedDamageType(lines) {
+    const attack = new RegExp(`^[^:|]{1,40}?\\s*[-:–]\\s*(?:${RANGE_PATTERN})\\s*[-–|]\\s*[\\dd+\\-−–\\s]*\\d$`, 'i');
+    const type = /^\(?(?:phy\w*|mag\w*|kin\w*|ene\w*|stress)\)?$/i;
+    const joined = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const next = lines[i + 1];
+        if (next && attack.test(cleanText(line.text)) && type.test(cleanText(next.text))) {
+            joined.push({ ...line, text: `${line.text} ${next.text}`, runs: [...line.runs, { ...next.runs[0], text: ' ' }, ...next.runs] });
+            i++;
+        } else joined.push(line);
+    }
+    return joined;
+}
+
+/**
  * Interpret an adversary stat block.
  * @param {object} block
  */
 export function parseAdversary(block) {
-    const lines = block.body;
+    const lines = joinWrappedDamageType(block.body);
     const isStat = line => isAdversaryStatLine(line.text);
     if (!lines.some(l => STAT_LINE.test(l.text))) return null;
     const firstStat = lines.findIndex(isStat);

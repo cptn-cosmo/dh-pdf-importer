@@ -46,6 +46,9 @@ const EXPECTED = {
     // HP/Stress tick boxes printed in a larger font between the stats and the features, and the horde size
     // in the name heading ("SCRAWNY GNOLLS (1/HP)")
     '@SRC/EE_HeartbeatGnolls_StatBlocksOnly_v1.pdf': { adversary: 16, environment: 3, journal: 1, attacks: 16, withFeatures: 16, hordeDamage: 1 },
+    // Text drawn twice (glyph by glyph and as whole strings), stat lines repeated on every page, a setting
+    // tag after the type ("Tier 1 Leader (Umbra-Touched)") and the damage type wrapped onto its own line
+    '@SRC/Age-of-Umbra-Adversaries.pdf': { adversary: 30, journal: 1, attacks: 30, withHp: 30, withStress: 30, withFeatures: 30, hordeDamage: 4 },
     '@SRC/PlaytestV03_Fist.pdf::images': { images: true, adversary: 8, attacks: 8, ocrEntries: 8 }
 };
 

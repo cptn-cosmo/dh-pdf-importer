@@ -214,9 +214,21 @@ export function layoutDocument(pages) {
 
     // Text repeated on many pages (running titles, watermarks, page numbers) is noise.
     const counts = new Map();
-    for (const lines of pageLines) {
+    const positions = new Map();
+    pageLines.forEach((lines, index) => {
         for (const key of new Set(lines.map(l => repeatKey(l.text)))) counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
+        for (const line of lines) {
+            const key = repeatKey(line.text);
+            if (!positions.has(key)) positions.set(key, []);
+            positions.get(key).push({ index, y: line.y });
+        }
+    });
+    // Away from the page edges, repeated text is only noise when it sits in the same place on (nearly)
+    // every page, like a watermark; stat lines ("ATK: +3", "Difficulty: 14") repeat all over.
+    const samePlaceOnPages = line => {
+        const near = positions.get(repeatKey(line.text)).filter(p => Math.abs(p.y - line.y) < line.size * 2);
+        return new Set(near.map(p => p.index)).size;
+    };
     const textPages = pageLines.filter(l => l.length).length;
     const pageOffset = detectPageOffset(pageLines, pages);
     const threshold = Math.max(3, Math.ceil(textPages * 0.3));
@@ -235,7 +247,7 @@ export function layoutDocument(pages) {
                 lines.push(line);
                 continue;
             }
-            const repeatedAnywhere = counts.get(key) >= textPages * 0.9;
+            const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && samePlaceOnPages(line) >= textPages * 0.9;
             if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || repeatedAnywhere)) continue;
             lines.push(line);
         }

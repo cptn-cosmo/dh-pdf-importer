@@ -283,9 +283,10 @@ export function parseCosts(text) {
     const head = text.slice(0, 120);
     const re = /\b(mark|spend)\s+(a|an|one|two|three|four|\d+)\s+(stress|fear|hope|hp|hit points?)\b/gi;
     for (const match of head.matchAll(re)) {
-        // Only costs paid by the feature user, not effects inflicted on targets ("the target must mark a Stress").
+        // Only costs paid by the feature user, not effects inflicted on targets ("the target must mark a
+        // Stress", "must also mark a Stress", "cannot mark a Stress and instead must mark HP").
         const before = head.slice(Math.max(0, match.index - 25), match.index).toLowerCase();
-        if (/(must|target|they|each|pc|to)\s*$/.test(before)) continue;
+        if (/(must|cannot|can['’]?t|target|they|each|pc|to)(\s+(also|then|instead|immediately|additionally))?\s*$/.test(before)) continue;
         const resource = match[3].toLowerCase();
         const key = resource === 'hp' || resource.startsWith('hit') ? 'hitPoints' : resource;
         const amount = NUMBER_WORDS[match[2].toLowerCase()] ?? Number(match[2]);

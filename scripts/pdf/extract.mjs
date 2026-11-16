@@ -145,6 +145,42 @@ function fixTinySizes(items) {
 }
 
 /**
+ * Some PDFs draw the same text twice at the same spot (for example once glyph by glyph and once as a
+ * whole string), which would read as "GraveswordGravesword". Drop exact duplicates, and pieces lying
+ * within a longer item on the same baseline when together they spell that item's text.
+ * @param {object[]} items
+ * @returns {object[]}
+ */
+export function removeOverprint(items) {
+    const same = (a, b) => Math.abs(a.y - b.y) < 0.5 && Math.abs(a.size - b.size) < 0.5;
+    const squash = text => text.replace(/\s+/g, '');
+    const within = (i, whole) => same(i, whole) && i.x >= whole.x - 0.5 && i.x + i.w <= whole.x + whole.w + 0.5;
+    const drop = new Set();
+    const kept = [];
+    const solid = items.filter(i => i.str.trim());
+    for (const whole of solid) {
+        if (drop.has(whole)) continue;
+        const target = squash(whole.str);
+        const inside = solid.filter(i => i !== whole && !drop.has(i) && within(i, whole));
+        if (!inside.length) continue;
+        // An identical copy.
+        const twin = inside.find(i => i.str === whole.str && Math.abs(i.x - whole.x) < 0.5);
+        if (twin) {
+            drop.add(twin);
+            continue;
+        }
+        const pieces = inside.filter(i => squash(i.str).length < target.length).sort((a, b) => a.x - b.x);
+        if (pieces.length > 1 && pieces.map(i => squash(i.str)).join('') === target) {
+            for (const piece of pieces) drop.add(piece);
+            kept.push(whole);
+        }
+    }
+    if (!drop.size) return items;
+    // The spaces between the dropped pieces go too.
+    return items.filter(i => !drop.has(i) && (i.str.trim() || !kept.some(whole => within(i, whole))));
+}
+
+/**
  * Load the copy of pdf.js bundled with Foundry VTT.
  * @returns {Promise<object>}
  */
@@ -228,6 +264,8 @@ export async function extractPdf(pdfjs, data, { onProgress } = {}) {
             });
         }
         fixTinySizes(items);
+        const unique = removeOverprint(items);
+        items.splice(0, items.length, ...unique);
         // Invisible text added by OCR tools (Tesseract's "GlyphLessFont", e.g. from OCRmyPDF) is OCR text:
         // flag it, and join its separately placed words into phrases.
         const layer = items.filter(i => /GlyphLessFont/i.test(i.font));
