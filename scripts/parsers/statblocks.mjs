@@ -25,7 +25,9 @@ import { MISSING_GLYPH } from '../pdf/extract.mjs';
 // The type may be followed by the horde size, "(2/HP)", or a tag of the setting: "(Umbra-Touched)".
 const TIER_LINE = /^Tier\s*([1-4])\s*([A-Za-z][A-Za-z/ ]*?)\s*(?:\(\s*(\d+)\s*\/\s*HP\s*\)|\(\s*(\p{L}[\p{L}\s'’-]{0,30}?)\s*\))?\s*$/iu;
 const FEATURE_START =
-    /^(?<name>[A-Z0-9“"'‘(][^:]{0,80}?)\s*[-–—:]\s*(?<form>Passive|Action|Reaction|Evolution)\s*[:.]\s*/;
+    /^(?<name>[A-Z0-9“"'‘(][^:]{0,80}?)\s*[-–—:]\s*(?<form>Passive|Action|Reaction|Evolution)\s*(?:\((?<tag>[^)]{1,30})\)\s*)?[:.]\s*/;
+// "Impulses: …", or without the colon: "Impulses Keep the heroes scared, …"
+const IMPULSES = /^Impulses?\s*(?::\s*|(?=\p{Lu}))/iu;
 const STAT_LINE = /^(?:D?ifficulty|Diff)\b\s*:?\s*(?:\d+|Special)/i;
 
 /** Tick boxes printed instead of numbers: "HP: O O O", "Stress: ☐ ☐". */
@@ -40,10 +42,12 @@ const DAMAGE = '[\\dd+\\-−–\\s]+?\\s*\\(?(?:phy\\w*|mag\\w*|kin\\w*|ene\\w*|
  */
 const ADVERSARY_STAT_LINES = [
     STAT_LINE,
-    /^(?:Thresholds?|Th)\b\s*:?\s*(?:\d|None)/i,
+    /^(?:Thresholds?|Th)\b\s*:?\s*(?:\d|None|[-–—]\s*\/)/i,
     /^Major\b\s*:?\s*\d+/i,
     new RegExp(`^(?:HP|Stress)\\s*:?\\s*(?:\\d|${PIP}(?:\\s*${PIP})*\\s*(?:$|\\||(?:HP|Stress)\\b))`, 'i'),
     /^(?:ATK|Attack Modifier)\s*:?\s*[+\-−–]?\s*\d/i,
+    // Attack +2 Shock Baton Melee, 2d6+4 mag
+    new RegExp(`^Attack\\s*:?\\s*[+\\-−–]\\s*\\d+\\s+.{1,40}?\\s${RANGE}\\s*,\\s*${DAMAGE}`, 'i'),
     /^(?:Experiences?|Exp)\b\s*:?\s*[^\n]*?[+\-−–]\s*\d/i,
     // Bite - Melee - 1d6+3 phy / Dagger: Melee - 1d8+5 phy
     new RegExp(`^[^:|]{1,40}?\\s*[-:–]\\s*${RANGE}\\s*[-–|]\\s*${DAMAGE}`, 'i'),
@@ -80,7 +84,8 @@ export function matchFeatureStart(lines, index) {
     const attempt = (text, count) => {
         const match = text.match(FEATURE_START);
         if (!match) return null;
-        const name = cleanText(match.groups.name);
+        // "Omega - Reaction (Phase Change):" keeps its tag in the name.
+        const name = cleanText(match.groups.name) + (match.groups.tag ? ` (${cleanText(match.groups.tag)})` : '');
         if (name.split(' ').length > 12 || /[.!?]\s+\S/.test(name.replace(/\([^)]*\)/g, ''))) return null;
         return { name, form: match.groups.form.toLowerCase(), lines: count, offset: match[0].length };
     };
@@ -164,6 +169,15 @@ function joinName(lines) {
 /** Collect the lines making up the name heading above a tier line. */
 function findName(lines, tierIndex, floor) {
     const tier = lines[tierIndex];
+    // A name centred over the column can lie beyond a short tier line ("Tier 1 Minion"); measure against
+    // the lines of the block that start where the tier line does.
+    const columnRight = Math.max(
+        tier.right,
+        ...lines
+            .slice(tierIndex + 1, tierIndex + 4)
+            .filter(l => l.page === tier.page && Math.abs(l.x - tier.x) < tier.size)
+            .map(l => l.right)
+    );
     const parts = [];
     for (let i = tierIndex - 1; i >= floor && parts.length < 3; i--) {
         const line = lines[i];
@@ -172,7 +186,7 @@ function findName(lines, tierIndex, floor) {
         const caps = !/[a-z]/.test(line.text) && /[A-Z]/.test(line.text);
         if (!larger && !caps) break;
         const below = parts[0] ?? tier;
-        const aligned = line.x < tier.right && line.right > tier.x;
+        const aligned = line.x < (parts.length ? below.right : columnRight) && line.right > tier.x;
         // A heading never mixes recognised text with the PDF's own text (an image of a stat block next
         // to commentary). OCR sizes are estimates, so allow a larger gap between OCR lines.
         if (!!line.ocr !== !!below.ocr) break;
@@ -216,7 +230,7 @@ export function findStatBlocks(lines) {
 
         // The block's body font size is that of the line describing it.
         const bodyLines = lines.slice(anchor.index + 1, Math.min(hardEnd, anchor.index + 12));
-        const statLine = bodyLines.find(l => isAdversaryStatLine(l.text) || /^Impulses?:/i.test(l.text));
+        const statLine = bodyLines.find(l => isAdversaryStatLine(l.text) || IMPULSES.test(l.text));
         const bodySize = statLine?.size ?? bodyLines[0]?.size ?? lines[anchor.index].size;
 
         const body = [];
@@ -321,6 +335,11 @@ function parseAttack(text) {
         new RegExp(`ATK\\s*:?\\s*([+\\-−–]?\\s*\\d+)\\s*\\|\\s*(.+?)\\s*:?\\s*${range}\\s*\\|\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
     );
     if (match) return { bonus: parseSigned(match[1]), name: cleanText(match[2]), range: toRange(match[3]), damage: parseDamage(match[4]), damageType: damageTypeOf(match[5]) };
+    // Attack +2 Shock Baton Melee, 2d6+4 mag
+    match = text.match(
+        new RegExp(`(?:^|\\n)Attack\\s*:?\\s*([+\\-−–]\\s*\\d+)\\s+(.+?)\\s+${range}\\s*,\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
+    );
+    if (match) return { bonus: parseSigned(match[1]), name: cleanText(match[2]), range: toRange(match[3]), damage: parseDamage(match[4]), damageType: damageTypeOf(match[5]) };
     // Chipped Blade Melee +2, 1d8+2 phy
     match = text.match(
         new RegExp(`(?:^|\\n)([^\\n]+?)\\s+${range}\\s*([+\\-−–]\\s*\\d+)\\s*,\\s*([\\dd+\\-−\\s]+?)\\s*\\(?(phy\\w*|mag\\w*|kin\\w*|ene\\w*|stress)`, 'i')
@@ -349,7 +368,8 @@ function parseExperiences(text) {
 
 function thresholds(text) {
     const value = v => (v && /\d/.test(v) ? Number(v) : null);
-    const match = text.match(/\b(?:Thresholds?|Th)\b\s*:?\s*(\d+|None)(?:\s*\/\s*(\d+|None))?/i);
+    // Minions have none: "Thresholds -/-"
+    const match = text.match(/\b(?:Thresholds?|Th)\b\s*:?\s*(\d+|None|[-–—])(?:\s*\/\s*(\d+|None|[-–—]))?/i);
     if (match) return { major: value(match[1]), severe: value(match[2]) };
     // Major 4 | Severe 8
     const major = text.match(/\bMajor\b\s*:?\s*(\d+|None)/i);
@@ -386,7 +406,7 @@ export function parseAdversary(block) {
     const isStat = line => isAdversaryStatLine(line.text);
     if (!lines.some(l => STAT_LINE.test(l.text))) return null;
     const firstStat = lines.findIndex(isStat);
-    const { description, label: motives } = splitIntro(lines.slice(0, firstStat), /^Motives?\s*(?:&|and)\s*Tactics?\s*:\s*/i);
+    const { description, label: motives } = splitIntro(lines.slice(0, firstStat), /^Motives?\s*(?:&|and)\s*Tactics?\s*:?\s*/i);
 
     const statText = countPips(
         lines
@@ -445,7 +465,7 @@ export function parseEnvironment(block) {
     const statIndex = lines.findIndex(l => STAT_LINE.test(l.text));
     const { description, label: impulses } = splitIntro(
         lines.slice(0, statIndex >= 0 ? statIndex : 0),
-        /^Impulses?\s*:\s*/i
+        IMPULSES
     );
 
     let featureIndex = lines.findIndex(
@@ -457,7 +477,7 @@ export function parseEnvironment(block) {
         .map(l => cleanText(l.text))
         .join(' ');
     const difficulty = statText.match(/\b(?:Difficulty|Diff)\b\s*:?\s*(\d+|Special)/i);
-    const adversaryText = statText.match(/Potential Adversaries\s*:\s*(.+)$/i)?.[1] ?? '';
+    const adversaryText = statText.match(/Potential Adversaries\s*:?\s*(.+)$/i)?.[1] ?? '';
     const { features } = parseFeatures(lines.slice(featureIndex), { secretQuestions: true });
 
     const words = block.typeText.toLowerCase().split(/[\s/]+/);
@@ -500,7 +520,7 @@ export function parsePotentialAdversaries(text) {
 export function parseStatBlocks(lines) {
     const results = [];
     for (const block of findStatBlocks(lines)) {
-        const isEnvironment = block.body.some(l => /^Impulses?\s*:/i.test(l.text));
+        const isEnvironment = block.body.some(l => IMPULSES.test(l.text));
         const parsed = isEnvironment ? parseEnvironment(block) : parseAdversary(block);
         if (!parsed) continue;
         // Remember which lines were consumed so the journal can link to the entry instead of repeating it.

@@ -142,7 +142,8 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
             prev && (line.ocr ? ocrGap(prev, line, spacing) : prev.block !== line.block && !continuesBlock(prev, line, spacing));
         const heading = line.bold && !prev?.bold && text.length < 60;
         if (!current || bullet || fontChanged || labelled || blockChanged || heading || (prev?.bold && !line.bold)) {
-            current = { runs: [], bullet, font: line.font };
+            // Numbered options ("1. …" for a d8 roll) keep their numbers as an ordered list.
+            current = { runs: [], bullet, ordered: bullet && /^\s*\d+\./.test(text), font: line.font };
             paragraphs.push(current);
         } else {
             // Join wrapped lines, keeping hyphenated words intact.
@@ -161,22 +162,23 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
     if (secretQuestions) paragraphs.splice(0, paragraphs.length, ...paragraphs.flatMap(splitTrailingQuestions));
 
     let html = '';
-    let list = false;
+    let list = null;
     const plain = [];
     for (const p of paragraphs) {
         const text = cleanText(p.runs.map(r => r.text).join(''));
         if (!text) continue;
         plain.push(text);
         const inner = runsToHtml(p.runs.map(r => ({ ...r, text: r.text.replace(/\s+/g, ' ') }))).trim();
-        if (p.bullet && !list) html += '<ul>';
-        if (!p.bullet && list) html += '</ul>';
-        list = p.bullet;
+        const tag = p.bullet ? (p.ordered ? 'ol' : 'ul') : null;
+        if (list && list !== tag) html += `</${list}>`;
+        if (tag && list !== tag) html += `<${tag}>`;
+        list = tag;
         if (p.bullet) html += `<li>${inner}</li>`;
         else if (secretQuestions && plain.length > 1 && isQuestion(text)) {
             html += `<section class="secret" id="secret-${randomId()}"><p><em>${inner}</em></p></section>`;
         } else html += `<p>${inner}</p>`;
     }
-    if (list) html += '</ul>';
+    if (list) html += `</${list}>`;
     return { html, text: plain.join('\n') };
 }
 
@@ -286,7 +288,7 @@ export function parseCosts(text) {
         // Only costs paid by the feature user, not effects inflicted on targets ("the target must mark a
         // Stress", "must also mark a Stress", "cannot mark a Stress and instead must mark HP").
         const before = head.slice(Math.max(0, match.index - 25), match.index).toLowerCase();
-        if (/(must|cannot|can['’]?t|target|they|each|pc|to)(\s+(also|then|instead|immediately|additionally))?\s*$/.test(before)) continue;
+        if (/(must|cannot|can['’]?t|target|they|them|each|pc|to)(\s+(also|then|instead|immediately|additionally))?\s*$/.test(before)) continue;
         const resource = match[3].toLowerCase();
         const key = resource === 'hp' || resource.startsWith('hit') ? 'hitPoints' : resource;
         const amount = NUMBER_WORDS[match[2].toLowerCase()] ?? Number(match[2]);

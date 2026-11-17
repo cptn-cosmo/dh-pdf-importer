@@ -150,7 +150,10 @@ function buildLines(items, page, block) {
                 const prevText = runs.at(-1)?.text ?? '';
                 // Letter-spaced titles are set as individual glyphs: require a wider gap between short fragments.
                 const short = prev.str.trim().length <= 2 || item.str.trim().length <= 2;
-                const threshold = item.size * (short ? 0.33 : 0.12);
+                // A word set in another style (an italic condition: "cannot be Restrained") is often placed
+                // a little tighter than an ordinary space, and a change of style rarely falls inside a word.
+                const styleChanged = !!prev.italic !== !!item.italic || !!prev.bold !== !!item.bold;
+                const threshold = item.size * (short ? 0.33 : styleChanged ? 0.08 : 0.12);
                 if (gap > threshold && !/\s$/.test(prevText) && !/^\s/.test(text)) text = ` ${text}`;
             }
             runs.push({ text, bold: item.bold, italic: item.italic, weight: item.str.trim().length });
@@ -230,6 +233,29 @@ export function layoutDocument(pages) {
         return new Set(near.map(p => p.index)).size;
     };
     const textPages = pageLines.filter(l => l.length).length;
+    // Running titles that change with each section ("CHAPTER 2: LOWER CITY", "HERNANDEZ: LOCAL BUSINESSES")
+    // repeat too rarely to be counted, but they sit at the same height in the outer margin of most pages.
+    // Some of them do repeat (the chapter title on every other page), unlike content that merely starts
+    // at the top of each page (one adversary per page, its name at the top). Only lines set like the
+    // running titles count, so other text that happens to share their height (a card's label, a line of
+    // body text next to the footer) stays.
+    const inMargin = (line, page) => line.y < page.height * 0.06 || line.y > page.height * 0.94;
+    const sameStyle = (a, b) => Math.abs(a.size - b.size) < 0.5 && !!a.bold === !!b.bold;
+    const marginLines = pageLines.flatMap((list, index) =>
+        list
+            .filter(l => inMargin(l, pages[index]) && l.text.length < 80)
+            .map(l => ({ index, y: l.y, size: l.size, bold: l.bold, key: repeatKey(l.text) }))
+    );
+    const bands = new Map();
+    const runningBand = line => {
+        const id = `${Math.round(line.y)}:${Math.round(line.size * 2)}:${!!line.bold}`;
+        if (!bands.has(id)) {
+            const band = marginLines.filter(m => Math.abs(m.y - line.y) < 1.5 && sameStyle(m, line));
+            const spread = new Set(band.map(m => m.index)).size >= Math.max(3, textPages * 0.3);
+            bands.set(id, spread && band.some(m => counts.get(m.key) >= 3));
+        }
+        return bands.get(id);
+    };
     const pageOffset = detectPageOffset(pageLines, pages);
     const threshold = Math.max(3, Math.ceil(textPages * 0.3));
     const lines = [];
@@ -249,6 +275,7 @@ export function layoutDocument(pages) {
             }
             const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && samePlaceOnPages(line) >= textPages * 0.9;
             if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || repeatedAnywhere)) continue;
+            if (line.text.length < 80 && inMargin(line, page) && runningBand(line)) continue;
             lines.push(line);
         }
     });

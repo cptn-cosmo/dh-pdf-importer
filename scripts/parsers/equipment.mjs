@@ -53,12 +53,12 @@ function matchHeader(rows, index) {
         const all = [...words, ...next];
         const find = (...names) => all.find(w => names.includes(w.key));
         const thresholds = find('basethresholds', 'thresholds', 'base');
-        const score = find('armorscore', 'armor', 'score');
+        const score = find('armorscore', 'armourscore', 'basescore', 'armor', 'armour', 'score');
         if (thresholds && score) {
             const columns = [
                 { key: 'name', x: find('name').x },
                 { key: 'thresholds', x: Math.min(thresholds.x, find('base')?.x ?? Infinity) },
-                { key: 'score', x: Math.min(score.x, find('armor')?.x ?? Infinity) },
+                { key: 'score', x: Math.min(score.x, find('armor', 'armour')?.x ?? Infinity) },
                 { key: 'feature', x: find('feature').x }
             ].sort((a, b) => a.x - b.x);
             return { kind: 'armor', rows: next.length && next.some(w => ['thresholds', 'score'].includes(w.key)) ? 2 : 1, columns };
@@ -75,17 +75,25 @@ function toCells(row, columns) {
         for (const c of columns) if (item.x >= c.x - 3) column = c;
         cells[column.key] = cleanText(`${cells[column.key]} ${item.str}`);
     }
+    // Punctuation set as its own item after an italic word ("Vulnerable" ".")
+    for (const key in cells) cells[key] = cells[key].replace(/ ([.,;:!?)])/g, '$1');
     return cells;
 }
 
-/** Find a heading such as "Secondary Weapons" or "Tier 2 Armor" just above a table. */
+/**
+ * Find a heading such as "Secondary Weapons" or "Tier 2 Armor" just above a table. Headings (larger
+ * or all caps) are preferred over prose that mentions weapons, which can sit between them and the table.
+ */
 function tableTitle(rows, headerIndex, floor) {
     const header = rows[headerIndex];
+    const candidates = [];
     for (let i = headerIndex - 1; i > floor && header.y - rows[i].y < 150; i--) {
         const text = cleanText(rows[i].items.map(it => it.str).join(' '));
-        if (/weapon|armor|armour/i.test(text) && text.length < 60) return text;
+        if (!/weapon|armor|armour/i.test(text) || text.length >= 60) continue;
+        const heading = rows[i].size > header.size * 1.15 || (/[A-Z]/.test(text) && text === text.toUpperCase());
+        candidates.push({ text, heading });
     }
-    return '';
+    return (candidates.find(c => c.heading) ?? candidates[0])?.text ?? '';
 }
 
 /**
@@ -108,14 +116,22 @@ function parseTable(rows, start, header, pageNumber) {
         const row = { ...rows[i], items, size: Math.max(...items.map(it => it.size)) };
         if (row.y - prev.y > Math.max(prev.size, row.size) * 5) break;
         if (row.size > baseSize * 1.6) break;
+        // A page number below the table
+        if (row.size < baseSize * 0.85 && /^\d+$/.test(cleanText(items.map(it => it.str).join('')))) break;
         prev = row;
         if (matchHeader(rows, i)) break;
+        // The title of the next table ("Magic Weapons") directly above its header
+        if (rows[i + 1] && matchHeader(rows, i + 1)) break;
         end = i;
         const cells = toCells(row, columns);
         const valueCell = header.kind === 'weapon' ? cells.damage : cells.thresholds;
         const isVariant = header.kind === 'weapon' ? /d\d+/.test(valueCell) : /\d+\s*\/\s*\d+/.test(valueCell);
 
-        if (cells.name && (isVariant || !record)) {
+        const tier = isVariant ? Number(valueCell.match(/Tier\s*(\d)/i)?.[1] ?? 0) || null : null;
+        // Tiers stacked in one cell ("Tier 1: d8+2" / "Tier 2: d8+5" ...) continue the record, and a
+        // name cell next to them is the name wrapping onto the next line.
+        const nextTier = tier > 1 && record?.variants.at(-1)?.tier === tier - 1;
+        if (cells.name && isVariant && !nextTier || cells.name && !record) {
             record = { name: cells.name, variants: [], features: [], page: pageNumber };
             records.push(record);
         } else if (cells.name && record) {
@@ -124,7 +140,6 @@ function parseTable(rows, start, header, pageNumber) {
         if (!record) continue;
 
         if (isVariant) {
-            const tier = Number(valueCell.match(/Tier\s*(\d)/i)?.[1] ?? 0) || null;
             record.variants.push({ tier, row: i, cells });
         }
         if (cells.feature) {
@@ -161,7 +176,10 @@ function buildWeapons(table, title) {
     const items = [];
     for (const record of table.records) {
         for (const variant of record.variants) {
-            const { cells } = variant;
+            // Trait, range and burden are often printed once for all tiers
+            const first = record.variants[0].cells;
+            const cells = { ...variant.cells };
+            for (const key of ['trait', 'range', 'burden']) cells[key] ||= first[key];
             const damageText = cells.damage.replace(/Tier\s*\d\s*:?/i, '').trim();
             const damageMatch = damageText.match(/^([\dd+\-−\s]+?)\s*(phy\w*|mag\w*)?$/i);
             const damage = parseDamage(damageMatch?.[1] ?? damageText);
@@ -205,7 +223,7 @@ function buildArmor(table, title) {
                 page: record.page,
                 tier,
                 thresholds: { major: Number(thresholds[1]), severe: Number(thresholds[2]) },
-                score: Number(cells.score.match(/\d+/)?.[0] ?? 0),
+                score: Number(cells.score.replace(/Tier\s*\d\s*:?/i, '').match(/\d+/)?.[0] ?? 0),
                 featureText: feature,
                 description: featureHtml(feature),
                 warnings: cells.score ? [] : ['Armor score not found']

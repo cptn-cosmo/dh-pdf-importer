@@ -49,7 +49,12 @@ const EXPECTED = {
     // Text drawn twice (glyph by glyph and as whole strings), stat lines repeated on every page, a setting
     // tag after the type ("Tier 1 Leader (Umbra-Touched)") and the damage type wrapped onto its own line
     '@SRC/Age-of-Umbra-Adversaries.pdf': { adversary: 30, journal: 1, attacks: 30, withHp: 30, withStress: 30, withFeatures: 30, hordeDamage: 4 },
-    '@SRC/PlaytestV03_Fist.pdf::images': { images: true, adversary: 8, attacks: 8, ocrEntries: 8 }
+    '@SRC/PlaytestV03_Fist.pdf::images': { images: true, adversary: 8, attacks: 8, ocrEntries: 8 },
+    // Weapon and armour tables with all four tiers stacked in one cell ("Tier 1: d8+2 phy" / "Tier 2: …")
+    // and names wrapping beside them; stat blocks without colons ("Difficulty 14 Thresholds 10/17 HP 5",
+    // "Attack +2 Shock Baton Melee, 2d6+4 mag", "Impulses …"), names centred over a short tier line, and
+    // running titles that change with every section
+    '@SRC/COTBR_Book_Pages.pdf': { weapon: 48, secondary: 20, armor: 8, adversary: 11, environment: 10, journal: 1, attacks: 11, withHp: 11, withStress: 11, withFeatures: 11, hordeDamage: 1 }
 };
 
 const hasTesseract = (() => {
