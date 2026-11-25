@@ -80,6 +80,10 @@ function renderWithTables(entries) {
     return html + renderParagraphs(text).html;
 }
 
+/** Display typefaces that have capitals only: "barnacle" set in Eveleth is printed as BARNACLE. */
+const CAPS_ONLY_FONTS = /Eveleth|Bebas|Trajan/i;
+const asPrinted = (line, text) => (CAPS_ONLY_FONTS.test(line.font ?? '') ? text.toUpperCase() : text);
+
 /**
  * @param {import('../pdf/layout.mjs').Line[]} lines
  * @param {number} bodySize
@@ -130,23 +134,27 @@ export function parseJournal(lines, bodySize, entries, title) {
         const text = cleanText(line.text);
         if (line.size >= pageBreakSize && text.length < 80 && /\p{L}/u.test(text)) {
             // Collect a heading that wraps over several lines.
-            const parts = [text.replace(/^[■●•▪◆►›»]\s*/u, '')];
+            const parts = [asPrinted(line, text.replace(/^[■●•▪◆►›»]\s*/u, ''))];
             while (lines[i + 1] && Math.abs(lines[i + 1].size - line.size) < 0.5 && lines[i + 1].page === line.page && !consumed.has(lines[i + 1])) {
-                parts.push(cleanText(lines[++i].text));
+                const next = lines[++i];
+                parts.push(asPrinted(next, cleanText(next.text)));
                 if (parts.length >= 3) break;
             }
             flush();
             const name = formatName(parts.join(' '));
             // Keep tiny sections (decorative headings) together with what follows.
             if (page && page.html.replace(/<[^>]+>/g, '').length < 40 && !page.html.includes('data-dhpi-link')) {
-                page.name = page.name === title ? name : `${page.name} ${name}`;
+                // Running section titles repeat on every page of a section ("Standees & Terrain").
+                if (page.name === title) page.name = name;
+                else if (!page.name.toLowerCase().includes(name.toLowerCase())) page.name = `${page.name} ${name}`;
             } else {
                 page = { name, html: '', firstPage: line.page };
                 pages.push(page);
             }
             continue;
         }
-        if (line.size >= subheadingSize && text.length < 80 && !/[.,;]$/.test(text)) {
+        // Large numbers (a character sheet's Evasion, a difficulty scale) are values, not headings.
+        if (line.size >= subheadingSize && text.length < 80 && !/[.,;]$/.test(text) && /\p{L}/u.test(text)) {
             flush();
             page ??= { name: title, html: '', firstPage: line.page };
             if (!pages.includes(page)) pages.push(page);

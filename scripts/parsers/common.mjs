@@ -175,7 +175,9 @@ export function renderParagraphs(entries, { secretQuestions = false } = {}) {
         list = tag;
         if (p.bullet) html += `<li>${inner}</li>`;
         else if (secretQuestions && plain.length > 1 && isQuestion(text)) {
-            html += `<section class="secret" id="secret-${randomId()}"><p><em>${inner}</em></p></section>`;
+            // Questions printed in italics already carry their emphasis.
+            const italic = p.runs.every(r => r.italic || !r.text.trim());
+            html += `<section class="secret" id="secret-${randomId()}"><p>${italic ? inner : `<em>${inner}</em>`}</p></section>`;
         } else html += `<p>${inner}</p>`;
     }
     if (list) html += `</${list}>`;

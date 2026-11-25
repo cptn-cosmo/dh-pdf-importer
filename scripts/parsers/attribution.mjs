@@ -5,12 +5,20 @@ import { cleanText } from './common.mjs';
 
 /** Turn a file name like "Death_at_Helfast_Spire_v1_0.pdf" into "Death at Helfast Spire". */
 export function titleFromFileName(fileName) {
+    let name = fileName.replace(/\.pdf$/i, '');
+    // Release dates: "Dying-Spire-Adventure-NOV_23_26", "Quickstart-Adventure-5-20-2025", "… - 9-09-25"
+    const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
+    name = name
+        .replace(new RegExp(`[\\s_-]+${MONTH}[\\s_-]+\\d{1,2}(?:[\\s_,-]+\\d{2,4})?$`, 'i'), '')
+        .replace(/[\s_-]+\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}$/, '');
+    // Words joined by hyphens alone ("Dying-Spire-Adventure") are a slug, not a hyphenated title.
+    if (!/[\s_]/.test(name)) name = name.replace(/-+/g, ' ');
     return cleanText(
-        fileName
-            .replace(/\.pdf$/i, '')
+        name
             .replace(/[_]+/g, ' ')
             .replace(/\s+-\s+(pages|spreads|print|screen|digital|web|printer friendly)$/i, '')
             .replace(/\s+v\d+(?:[ ._]\d+)*$/i, '')
+            .replace(/[\s-]+$/, '')
     );
 }
 

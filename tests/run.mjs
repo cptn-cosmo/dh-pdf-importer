@@ -32,7 +32,6 @@ const EXPECTED = {
     '@SRC/DH_Adv_The_Wish_Thief_V2_Adventure_Only.pdf': { adversary: 4, environment: 2, journal: 1, attacks: 4 },
     // Image-only PDFs, read with OCR (needs pdftoppm and the tesseract CLI)
     '@SRC/Pistolheart_Vol_1_scanned page.pdf': { ocr: true, environment: 2 },
-    '@SRC/The Dying Spire - Adventure and Characters.pdf': { ocr: true, adversary: 5, environment: 1, attacks: 5 },
     // Text layer for most pages, but the adversary stat blocks are pictures: nothing without image OCR
     // Character options in the SRD layout; The New Unknown's own domains and card types
     '@SRC/PlaytestV03_Fist.pdf': { adversary: 0, journal: 1, class: 4, subclass: 5, ancestry: 7, community: 3, domainCard: 35 },
@@ -54,6 +53,10 @@ const EXPECTED = {
     // and names wrapping beside them; stat blocks without colons ("Difficulty 14 Thresholds 10/17 HP 5",
     // "Attack +2 Shock Baton Melee, 2d6+4 mag", "Impulses …"), names centred over a short tier line, and
     // running titles that change with every section
+    // Labels and values set in two columns inside the stat block ("Thresholds: 12/20" beside "Difficulty:"),
+    // a page number between the two footers, numbered obstacles with a hanging indent and pregenerated
+    // characters whose names are set in a capitals-only display font
+    '@SRC/Dying-Spire-Adventure-NOV_23_26.pdf': { adversary: 5, environment: 1, journal: 1, attacks: 5, withHp: 5, withStress: 5, withFeatures: 5, withThresholds: 4, orderedLists: 1 },
     '@SRC/COTBR_Book_Pages.pdf': { weapon: 48, secondary: 20, armor: 8, adversary: 11, environment: 10, journal: 1, attacks: 11, withHp: 11, withStress: 11, withFeatures: 11, hordeDamage: 1 }
 };
 
@@ -89,6 +92,8 @@ for (const [file, { ocr, recover, images, ...expected }] of Object.entries(EXPEC
         if (e.kind === 'adversary' && e.hp) actual.withHp = (actual.withHp ?? 0) + 1;
         if (e.kind === 'adversary' && e.stress) actual.withStress = (actual.withStress ?? 0) + 1;
         if (e.kind === 'adversary' && e.features.length) actual.withFeatures = (actual.withFeatures ?? 0) + 1;
+        if (e.kind === 'adversary' && e.thresholds?.major) actual.withThresholds = (actual.withThresholds ?? 0) + 1;
+        if (e.kind === 'environment') actual.orderedLists = (actual.orderedLists ?? 0) + e.features.filter(f => f.description.includes('<ol>')).length;
         if (e.hordeDamage) actual.hordeDamage = (actual.hordeDamage ?? 0) + 1;
         if (e.secondary) actual.secondary = (actual.secondary ?? 0) + 1;
         if (e.ocr && e.kind !== 'journal') actual.ocrEntries = (actual.ocrEntries ?? 0) + 1;

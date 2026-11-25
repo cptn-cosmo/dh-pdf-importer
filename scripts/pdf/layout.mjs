@@ -70,6 +70,9 @@ function splitColumns(items, bodySize) {
     const cut = (gap.start + gap.end) / 2;
     const left = items.filter(i => i.x + i.w / 2 < cut);
     const right = items.filter(i => i.x + i.w / 2 >= cut);
+    // The number of a list item with a hanging indent ("1." beside a paragraph) is not a column.
+    const leftText = left.filter(i => i.str.trim());
+    if (leftText.length === 1 && /^\s*(?:\d{1,2}[.)]|[•●▪◦–-])\s*$/.test(leftText[0].str)) return null;
     return left.length && right.length ? [left, right] : null;
 }
 
@@ -85,13 +88,39 @@ function xyCut(items, bodySize) {
     const columns = splitColumns(items, bodySize);
     if (columns) return columns.flatMap(part => xyCut(part, bodySize));
 
-    // A heading spanning both columns with no whitespace below it blocks the gutter: peel it off first.
+    // A heading spanning both columns with no whitespace below it blocks the gutter, and so does a footer
+    // set across it ("©2026 Daggerheart   5   ©2026 Daggerheart"): peel it off first.
     const solid = items.filter(i => i.str.trim()).toSorted((a, b) => itemTop(a) - itemTop(b));
-    for (let k = 1; k <= Math.min(3, solid.length - 2); k++) {
-        const head = new Set(solid.slice(0, k));
-        const rest = items.filter(i => !head.has(i));
+    const peel = (edge, k) => {
+        const set = new Set(edge === 'head' ? solid.slice(0, k) : solid.slice(-k));
+        const rest = items.filter(i => !set.has(i));
+        // A footer is one row, set well apart from the text above it.
+        if (edge === 'tail') {
+            const ys = [...set].map(i => i.y);
+            const above = Math.max(...rest.filter(i => i.str.trim()).map(itemBottom));
+            if (Math.max(...ys) - Math.min(...ys) > bodySize * 0.5 || Math.min(...[...set].map(itemTop)) - above < bodySize * 2) return null;
+        }
+        // A label with its value beside it ("Thresholds: 12/20" over "HP: 3") is not a heading: peeling
+        // it would tear the value off its row.
+        if ([...set].some(h => rest.some(i => i.str.trim() && Math.abs(i.y - h.y) < Math.min(i.size, h.size) * 0.5))) return null;
         const split = splitColumns(rest, bodySize);
-        if (split) return [...xyCut([...head], bodySize), ...split.flatMap(part => xyCut(part, bodySize))];
+        if (!split) return null;
+        // Only text that actually crosses the gutter blocks it; a row of two column lines does not.
+        const [left, right] = split.map(part => part.filter(i => i.str.trim()));
+        const gutterStart = Math.max(...left.map(i => i.x + i.w));
+        const gutterEnd = Math.min(...right.map(i => i.x));
+        if (![...set].some(i => i.x < gutterEnd && i.x + i.w > gutterStart)) return null;
+        const peeled = xyCut([...set], bodySize);
+        const columns = split.flatMap(part => xyCut(part, bodySize));
+        return edge === 'head' ? [...peeled, ...columns] : [...columns, ...peeled];
+    };
+    for (let k = 1; k <= Math.min(3, solid.length - 2); k++) {
+        const result = peel('tail', k);
+        if (result) return result;
+    }
+    for (let k = 1; k <= Math.min(3, solid.length - 2); k++) {
+        const result = peel('head', k);
+        if (result) return result;
     }
 
     const gaps = findGaps(items.map(i => [itemTop(i), itemBottom(i)])).filter(g => g.size >= bodySize * 0.35);
@@ -261,21 +290,27 @@ export function layoutDocument(pages) {
     const lines = [];
     pageLines.forEach((list, index) => {
         const page = pages[index];
-        for (const line of list) {
+        const edge = line => line.y < page.height * 0.09 || line.y > page.height * 0.91;
+        const isNoise = line => {
             const key = repeatKey(line.text);
-            const edge = line.y < page.height * 0.09 || line.y > page.height * 0.91;
+            if (key === '#') return false;
+            const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && samePlaceOnPages(line) >= textPages * 0.9;
+            if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge(line) || repeatedAnywhere)) return true;
+            // A footer that the page number was read into ("4 ©2026 Daggerheart").
+            const bare = key.replace(/^# | #$/g, '');
+            if (bare !== key && edge(line) && counts.get(bare) >= threshold) return true;
+            return line.text.length < 80 && inMargin(line, page) && runningBand(line);
+        };
+        const noise = new Set(list.filter(isNoise));
+        for (const line of list) {
+            if (noise.has(line)) continue;
             // Bare numbers repeat on every page as page numbers, but elsewhere they are content (a class's
             // starting Hit Points, a table cell near the bottom of the page). A page number is at the edge
-            // and alone on its row.
-            if (key === '#') {
-                const alone = !list.some(other => other !== line && Math.abs(other.y - line.y) < line.size * 0.6);
-                if (edge && alone) continue;
-                lines.push(line);
-                continue;
+            // and alone on its row, apart from other footer text.
+            if (repeatKey(line.text) === '#') {
+                const alone = !list.some(other => other !== line && !noise.has(other) && Math.abs(other.y - line.y) < line.size * 0.6);
+                if (edge(line) && alone) continue;
             }
-            const repeatedAnywhere = counts.get(key) >= textPages * 0.9 && samePlaceOnPages(line) >= textPages * 0.9;
-            if (counts.get(key) >= threshold && key.length < 100 && !/^features$/.test(key) && (edge || repeatedAnywhere)) continue;
-            if (line.text.length < 80 && inMargin(line, page) && runningBand(line)) continue;
             lines.push(line);
         }
     });
